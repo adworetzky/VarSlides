@@ -1,0 +1,136 @@
+# CLAUDE.md — VarSync development guide
+
+## Commands
+
+```bash
+npm run dev        # HTTPS dev server (required for Office JS sideloading)
+npm test           # Jest unit tests — run after every change
+npm run build      # production build
+```
+
+Tests must pass before committing. All logic in `src/taskpane/lib/` is pure and runs without a PowerPoint host.
+
+## Architecture
+
+### Data flow
+
+```
+PowerPoint host
+      ↕ Office JS
+  lib/ (registry.ts, linker.ts, syncer.ts, highlighter.ts)
+      ↕ async functions
+  hooks/ (useRegistry, useSelection, useHighlight)
+      ↕ Zustand
+  components/ → reads from store, calls hooks
+```
+
+**Registry writes always go: Zustand first → custom XML second.** The `persist()` helper in `useRegistry` does an optimistic store update and rolls back if the XML write fails. Never write directly to custom XML from a component.
+
+### Store shape
+
+```typescript
+{ registry, highlightMode, selectionContext, syncSummary }
+```
+
+`registry` is the single source of truth for variables and bindings. Everything else is derived or ephemeral UI state.
+
+### Custom XML
+
+Namespace: `http://varsync/registry/v1`. A single XML part holds the full JSON registry. `saveRegistry` deletes all existing parts under the namespace then adds a new one — in-place update is not possible with the Office JS custom XML API.
+
+## Key constraints
+
+### Never use Fluent UI
+
+UI must be built with Tailwind CSS utility classes only. Task pane is 320px wide — design compact and data-dense.
+
+### Highlights must not persist to saved files
+
+`useHighlight` registers a `documentBeforeSave` handler (where available) that strips highlights before the save completes. This handler is registered **once on mount** and reads live store state via `useVarSyncStore.getState()` at event time — do not add `registry` or `highlightMode` to the effect dependency array, as that would re-register on every state change.
+
+On Mac/Web where `documentBeforeSave` is unavailable, `HighlightToggle` shows a persistent warning. Do not remove this warning.
+
+### Phase 3 inline linking — Script Lab first
+
+Do not implement or modify run-splitting logic in `linker.ts` without first completing the Script Lab validation documented in `NOTES.md`. The `getSelectedTextRange()` and `paragraph.textRange.runs` APIs behave differently on Windows vs Mac. Findings must be recorded in `NOTES.md` before proceeding.
+
+## Office JS patterns
+
+### Batching context.sync()
+
+Load all properties before syncing — never `await context.sync()` inside a loop:
+
+```typescript
+// ✓ correct — one round-trip
+for (const run of runs.items) {
+  run.textRange.load("text");
+}
+await context.sync();
+for (const run of runs.items) {
+  process(run.textRange.text);
+}
+
+// ✗ wrong — N round-trips
+for (const run of runs.items) {
+  run.textRange.load("text");
+  await context.sync();           // <-- N+1
+  process(run.textRange.text);
+}
+```
+
+### Slide shape lookup
+
+When searching for a shape across all slides, batch-load all slide shape collections before syncing:
+
+```typescript
+for (const slide of slides.items) {
+  slide.shapes.load("items");
+}
+await context.sync();
+// now iterate synchronously
+```
+
+### emptyRegistry()
+
+The canonical empty registry is exported from `src/taskpane/lib/registry.ts`. Do not define it elsewhere.
+
+## Testing
+
+### What is unit-testable without Office JS
+
+Everything in `src/taskpane/lib/`:
+- `registry.ts` — `cleanOrphanedBindings`, `emptyRegistry`, XML helpers
+- `linker.ts` — `generateId`, `isLinkableShapeType`
+- `syncer.ts` — `classifyBinding`, `findLastKnownValueOffset`, `reLearnBinding`
+- `highlighter.ts` — `assignVariableColors`, `isColorCycling`, `getVariableColor`
+
+Office JS calls (`PowerPoint.run`, `Office.context`) live only in the async functions that take a `context` parameter. Keep this separation.
+
+### Shared fixtures
+
+Use `tests/fixtures.ts` for `makeVariable`, `makeBinding`, and `makeRegistry`. Do not add local copies to individual test files.
+
+### Office global stub
+
+`tests/setupOffice.ts` provides minimal `Office` and `PowerPoint` globals. Extend it if new Office APIs need to be called from lib functions that gain unit test coverage.
+
+## Binding classification logic
+
+`classifyBinding` in `syncer.ts`:
+
+1. If `runTexts[binding.runIndex] === lastKnownValue` → **clean** (run is intact)
+2. Else if `paragraphText.includes(lastKnownValue)` → **recoverable** (run remerged, value still present)
+3. Else → **broken** (value edited or deleted on slide)
+
+Recoverable bindings are auto-repaired during sync via `findLastKnownValueOffset` + `getSubstring`. Broken bindings are never silently overwritten — they surface in `SyncSummaryPanel` for user action.
+
+## Color palette
+
+8 fixed colors in `HIGHLIGHT_PALETTE` (`src/types/index.ts`). Variable colors are assigned by position index and cycle if more than 8 variables exist. The `HighlightToggle` legend shows a cycling warning when active.
+
+## Things that will break
+
+- **Removing `REGISTRY_NAMESPACE`** — all existing custom XML parts in user files will become unreadable. Add a migration path if the namespace must change.
+- **Changing `Binding` fields** — `lastKnownValue` and `charOffset` are load-bearing for recovery. Renaming them requires migrating stored JSON.
+- **Adding `registry` or `highlightMode` to the `useHighlight` save-guard `useEffect` deps** — this re-registers the handler on every state change, which is expensive and can cause double-strip on save.
+- **Calling `saveRegistry` directly from a component** — bypasses Zustand, creating a store/XML split-brain. Always go through `useRegistry`.
