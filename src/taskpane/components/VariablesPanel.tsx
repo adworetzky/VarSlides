@@ -174,16 +174,10 @@ export function VariablesPanel() {
     }
   };
 
-  const healthDotClass: Record<VariableHealth, string> = {
-    ok: "text-green-400",
-    broken: "text-amber-400",
-    unknown: "text-neutral-600",
-  };
-
-  const healthTitle: Record<VariableHealth, string> = {
-    ok: "All bindings healthy",
-    broken: "Some bindings broken — run Sync",
-    unknown: "No bindings yet",
+  const healthBadge: Record<VariableHealth, { label: string; cls: string; title: string }> = {
+    ok:      { label: "ok",     cls: "text-green-400 bg-green-950/40",  title: "All bindings healthy" },
+    broken:  { label: "broken", cls: "text-amber-400 bg-amber-950/40",  title: "Some bindings broken — run Sync" },
+    unknown: { label: "no links", cls: "text-neutral-500 bg-neutral-800", title: "No bindings yet" },
   };
 
   return (
@@ -275,8 +269,8 @@ export function VariablesPanel() {
         </div>
       )}
 
-      {/* Search filter — only shown when there are enough variables to warrant it */}
-      {registry.variables.length > 3 && (
+      {/* Search filter — shown once there are enough variables to warrant it */}
+      {registry.variables.length >= 3 && (
         <input
           className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-cyan-500"
           placeholder="Filter variables…"
@@ -338,28 +332,25 @@ export function VariablesPanel() {
                   style={{ backgroundColor: v.color }}
                 />
                 <button
-                  className="text-xs font-medium text-neutral-200 hover:text-neutral-100 text-left truncate flex-1"
+                  className="text-xs font-medium text-neutral-200 hover:text-cyan-300 text-left truncate flex-1 cursor-text"
                   onClick={() => handleStartRename(v)}
                   title="Click to rename"
                 >
                   {v.name}
                 </button>
                 <span
-                  className={`text-xs leading-none ${healthDotClass[health]}`}
-                  title={healthTitle[health]}
+                  className={`text-[10px] leading-none px-1 py-0.5 rounded ${healthBadge[health].cls}`}
+                  title={healthBadge[health].title}
                 >
-                  {health === "unknown" ? "○" : "●"}
-                </span>
-                <span className="text-xs text-neutral-500">
-                  {count} link{count !== 1 ? "s" : ""}
+                  {healthBadge[health].label}
                 </span>
                 <button
                   onClick={() => void handleSync(v)}
                   disabled={syncing !== null}
                   className="text-xs text-cyan-400 hover:text-cyan-300 disabled:text-neutral-600 transition-colors"
-                  title="Sync this variable"
+                  title={`Sync ${v.name} (${count} link${count !== 1 ? "s" : ""})`}
                 >
-                  {syncing === v.name ? "..." : "Sync"}
+                  {syncing === v.name ? "…" : "Sync"}
                 </button>
                 <button
                   onClick={() => handleDeleteRequest(v.name)}

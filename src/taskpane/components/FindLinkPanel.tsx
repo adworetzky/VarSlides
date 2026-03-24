@@ -46,27 +46,18 @@ export function FindLinkPanel({ variable, onClose }: Props) {
     const key = matchKey(match);
     setLinking((prev) => new Set(prev).add(key));
     try {
-      let binding;
-      const paraText = match.fullParagraphText;
-      const isWholeShape = paraText.trim() === variable.value;
-
-      if (isWholeShape) {
-        binding = await linkWholeShape(
-          variable,
-          match.shapeId,
-          match.shapeName,
-          match.slideIndex
-        );
-      } else {
-        binding = await linkInlineSelection(
-          variable,
-          match.shapeId,
-          match.slideIndex,
-          match.paragraphIndex,
-          match.charOffset,
-          match.charOffset + variable.value.length
-        );
-      }
+      const isWholeShape = match.fullParagraphText.trim() === variable.value;
+      const binding = isWholeShape
+        ? await linkWholeShape(variable, match.shapeId, match.shapeName, match.slideIndex)
+        : await linkInlineSelection(
+            variable,
+            match.shapeId,
+            match.slideIndex,
+            match.paragraphIndex,
+            match.charOffset,
+            match.charOffset + variable.value.length,
+            match.shapeName
+          );
       await addBinding(binding);
       setLinked((prev) => new Set(prev).add(key));
     } catch (e) {
@@ -82,16 +73,14 @@ export function FindLinkPanel({ variable, onClose }: Props) {
 
   const handleLinkAll = async () => {
     if (!matches) return;
-    const unlinked = matches.filter(
-      (m) => !m.alreadyLinked && !linked.has(matchKey(m))
-    );
-    for (const match of unlinked) {
+    for (const match of matches.filter((m) => !m.alreadyLinked && !linked.has(matchKey(m)))) {
       await handleLinkMatch(match);
     }
   };
 
   const newMatches = matches?.filter((m) => !m.alreadyLinked) ?? [];
   const alreadyLinkedMatches = matches?.filter((m) => m.alreadyLinked) ?? [];
+  const allDone = matches !== null && newMatches.length > 0 && linked.size >= newMatches.length;
 
   return (
     <div className="flex flex-col gap-2 bg-neutral-800/60 border border-neutral-700 rounded p-2">
@@ -103,8 +92,7 @@ export function FindLinkPanel({ variable, onClose }: Props) {
             <span className="font-mono text-cyan-300">{variable.value}</span>
           </p>
           <p className="text-xs text-neutral-500">
-            Scans all slides for text matching{" "}
-            <span className="font-mono">{variable.name}</span>'s current value
+            Scan all slides for text matching this value
           </p>
         </div>
         <button
@@ -116,9 +104,10 @@ export function FindLinkPanel({ variable, onClose }: Props) {
       </div>
 
       {error && (
-        <p className="text-xs text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-1">
-          {error}
-        </p>
+        <div className="text-xs text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-1 flex items-start gap-1.5">
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-300 hover:text-red-100 flex-shrink-0">×</button>
+        </div>
       )}
 
       {/* Scan button */}
@@ -135,31 +124,44 @@ export function FindLinkPanel({ variable, onClose }: Props) {
       {/* Results */}
       {matches !== null && (
         <>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-neutral-400">
-              {newMatches.length} new match{newMatches.length !== 1 ? "es" : ""}
-              {alreadyLinkedMatches.length > 0 &&
-                `, ${alreadyLinkedMatches.length} already linked`}
-            </span>
-            <div className="flex gap-1.5">
-              {newMatches.length > 0 && linked.size < newMatches.length && (
-                <button
-                  onClick={() => void handleLinkAll()}
-                  disabled={linking.size > 0}
-                  className="text-cyan-400 hover:text-cyan-300 disabled:text-neutral-600 font-medium transition-colors"
-                >
-                  Link All
-                </button>
-              )}
+          {/* All done banner */}
+          {allDone ? (
+            <div className="bg-green-950/40 border border-green-800/50 rounded px-2 py-1.5 flex items-center justify-between">
+              <span className="text-xs text-green-400">All {newMatches.length} occurrence{newMatches.length !== 1 ? "s" : ""} linked</span>
               <button
                 onClick={() => void handleScan()}
-                disabled={scanning}
-                className="text-neutral-400 hover:text-neutral-200 transition-colors"
+                className="text-xs text-neutral-400 hover:text-neutral-200 transition-colors"
               >
                 Rescan
               </button>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-neutral-400">
+                {newMatches.length} new match{newMatches.length !== 1 ? "es" : ""}
+                {alreadyLinkedMatches.length > 0 &&
+                  `, ${alreadyLinkedMatches.length} already linked`}
+              </span>
+              <div className="flex gap-1.5">
+                {newMatches.length > 0 && (
+                  <button
+                    onClick={() => void handleLinkAll()}
+                    disabled={linking.size > 0}
+                    className="text-cyan-400 hover:text-cyan-300 disabled:text-neutral-600 font-medium transition-colors"
+                  >
+                    {linking.size > 0 ? "Linking…" : "Link All"}
+                  </button>
+                )}
+                <button
+                  onClick={() => void handleScan()}
+                  disabled={scanning}
+                  className="text-neutral-400 hover:text-neutral-200 transition-colors"
+                >
+                  Rescan
+                </button>
+              </div>
+            </div>
+          )}
 
           {matches.length === 0 && (
             <p className="text-xs text-neutral-500 text-center py-2">
@@ -197,7 +199,7 @@ export function FindLinkPanel({ variable, onClose }: Props) {
                   </div>
                   {isLinked ? (
                     <span className="text-green-400 flex-shrink-0 pt-0.5">
-                      {m.alreadyLinked ? "Linked" : "✓"}
+                      {m.alreadyLinked ? "was linked" : "✓ linked"}
                     </span>
                   ) : (
                     <button

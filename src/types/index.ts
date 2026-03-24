@@ -13,6 +13,7 @@ export interface Binding {
   id: string; // UUID
   variableName: string; // key into variable registry
   shapeId: string; // PowerPoint shape ID
+  shapeName?: string; // human-readable shape name (stored at link time for display)
   slideIndex: number; // 0-based slide index
   paragraphIndex: number; // index within shape's text body
   runIndex: number; // index of the specific run after splitting

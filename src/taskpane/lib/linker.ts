@@ -58,6 +58,7 @@ export async function linkWholeShape(
           id: generateId(),
           variableName: variable.name,
           shapeId,
+          shapeName,
           slideIndex,
           paragraphIndex: 0,
           runIndex: 0,
@@ -82,7 +83,8 @@ export async function linkInlineSelection(
   slideIndex: number,
   paragraphIndex: number,
   selectionStart: number,
-  selectionEnd: number
+  selectionEnd: number,
+  shapeName?: string
 ): Promise<Binding> {
   return new Promise<Binding>((resolve, reject) => {
     PowerPoint.run(async (context) => {
@@ -182,6 +184,7 @@ export async function linkInlineSelection(
           id: generateId(),
           variableName: variable.name,
           shapeId,
+          shapeName,
           slideIndex,
           paragraphIndex,
           runIndex: targetRunIndex,

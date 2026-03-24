@@ -15,14 +15,10 @@ export function BrokenLinkRow({ binding }: BrokenLinkRowProps) {
   const [error, setError] = useState<string | null>(null);
 
   const handleReLearn = async () => {
-    if (!selectionContext) {
-      setError("Select the correct text in the presentation first");
-      return;
-    }
+    if (!selectionContext) return;
     setRelearning(true);
     setError(null);
     try {
-      // Capture current selection text as new lastKnownValue
       await PowerPoint.run(async (context) => {
         const selectedRange = context.presentation.getSelectedTextRange();
         selectedRange.load("text");
@@ -31,7 +27,6 @@ export function BrokenLinkRow({ binding }: BrokenLinkRowProps) {
         const newValue = selectedRange.text;
         if (!newValue) throw new Error("No text selected");
 
-        // Determine run index and char offset from selection
         const slides = context.presentation.slides;
         slides.load("items");
         await context.sync();
@@ -84,8 +79,10 @@ export function BrokenLinkRow({ binding }: BrokenLinkRowProps) {
     await removeBinding(binding.id);
   };
 
+  const needsSelection = !selectionContext;
+
   return (
-    <div className="border border-amber-700/50 bg-amber-950/20 rounded p-2 flex flex-col gap-1">
+    <div className="border border-amber-700/50 bg-amber-950/20 rounded p-2 flex flex-col gap-1.5">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 text-xs">
@@ -95,23 +92,29 @@ export function BrokenLinkRow({ binding }: BrokenLinkRowProps) {
             <span className="text-neutral-500">·</span>
             <span className="text-neutral-400 truncate">{binding.shapeName}</span>
           </div>
-          <p className="text-xs text-neutral-500 mt-0.5 truncate">
-            Last known: <span className="font-mono text-amber-300">{binding.lastKnownValue}</span>
+          <p className="text-xs text-neutral-500 mt-0.5">
+            Last known: <span className="font-mono text-amber-300">{binding.lastKnownValue || <em>empty</em>}</span>
           </p>
         </div>
-        <span className="text-xs text-amber-400 flex-shrink-0">Broken</span>
+        <span className="text-xs text-amber-400 flex-shrink-0 font-medium">Broken</span>
       </div>
+
+      {/* Inline instructions when no shape is selected */}
+      {needsSelection && (
+        <p className="text-xs text-neutral-400 bg-neutral-800/60 rounded px-2 py-1.5 leading-relaxed">
+          To re-learn: go to the slide, select the correct replacement text in the shape, then click Re-learn.
+        </p>
+      )}
 
       {error && (
         <p className="text-xs text-red-400">{error}</p>
       )}
 
-      <div className="flex gap-1.5 mt-0.5">
+      <div className="flex gap-1.5">
         <button
           onClick={() => void handleReLearn()}
-          disabled={relearning || !selectionContext}
+          disabled={relearning || needsSelection}
           className="flex-1 bg-amber-700 hover:bg-amber-600 disabled:bg-neutral-800 disabled:text-neutral-600 text-white text-xs rounded py-1 transition-colors"
-          title={!selectionContext ? "Select the correct text in PowerPoint first" : undefined}
         >
           {relearning ? "Re-learning…" : "Re-learn"}
         </button>

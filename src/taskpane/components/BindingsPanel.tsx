@@ -55,7 +55,7 @@ export function BindingsPanel() {
     .map((b) => ({
       ...b,
       slideNumber: b.slideIndex + 1,
-      shapeName: b.shapeId,
+      shapeName: b.shapeName ?? b.shapeId.slice(0, 12),
     }));
 
   return (
@@ -110,7 +110,7 @@ export function BindingsPanel() {
                     </button>
                     <span className="text-neutral-600">·</span>
                     <span className="text-neutral-400 truncate" title={b.shapeId}>
-                      {b.shapeId.slice(0, 8)}…
+                      {b.shapeName ?? `${b.shapeId.slice(0, 8)}…`}
                     </span>
                   </div>
                   <p className="text-xs font-mono text-neutral-300 truncate mt-0.5">

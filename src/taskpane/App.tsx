@@ -39,10 +39,10 @@ export function App() {
   };
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: "variables", label: "Vars" },
+    { id: "variables", label: "Variables" },
     { id: "link", label: "Link" },
-    { id: "bindings", label: "Binds" },
-    { id: "highlight", label: "Color" },
+    { id: "bindings", label: "Bindings" },
+    { id: "highlight", label: "Highlights" },
   ];
 
   if (!initialized) {

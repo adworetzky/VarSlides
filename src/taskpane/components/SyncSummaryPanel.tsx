@@ -1,13 +1,21 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useVarSyncStore } from "../store/useVarSyncStore";
 import { BrokenLinkRow } from "./BrokenLinkRow";
 
 export function SyncSummaryPanel() {
   const { syncSummary, setSyncSummary } = useVarSyncStore();
 
+  // Auto-dismiss after 3 s when everything is clean
+  useEffect(() => {
+    if (!syncSummary || syncSummary.broken.length > 0) return;
+    const timer = setTimeout(() => setSyncSummary(null), 3000);
+    return () => clearTimeout(timer);
+  }, [syncSummary, setSyncSummary]);
+
   if (!syncSummary) return null;
 
   const hasBroken = syncSummary.broken.length > 0;
+  const total = syncSummary.clean + syncSummary.recovered + syncSummary.broken.length;
 
   return (
     <div
@@ -18,7 +26,9 @@ export function SyncSummaryPanel() {
       }`}
     >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-neutral-300">Sync Result</span>
+        <span className="text-xs font-semibold text-neutral-300">
+          {hasBroken ? "Sync complete — action needed" : "Sync complete"}
+        </span>
         <button
           onClick={() => setSyncSummary(null)}
           className="text-neutral-500 hover:text-neutral-300 text-xs transition-colors"
@@ -28,17 +38,17 @@ export function SyncSummaryPanel() {
       </div>
 
       <div className="flex gap-3 text-xs">
-        <span className="text-green-400">
-          {syncSummary.clean} clean
+        <span className="text-green-400" title={`${syncSummary.clean} binding${syncSummary.clean !== 1 ? "s" : ""} updated normally`}>
+          {syncSummary.clean}/{total} updated
         </span>
         {syncSummary.recovered > 0 && (
-          <span className="text-cyan-400">
-            {syncSummary.recovered} recovered
+          <span className="text-cyan-400" title="Run was remerged; binding auto-repaired">
+            {syncSummary.recovered} auto-repaired
           </span>
         )}
         {hasBroken && (
-          <span className="text-amber-400">
-            {syncSummary.broken.length} broken
+          <span className="text-amber-400" title="These bindings need manual attention">
+            {syncSummary.broken.length} need attention
           </span>
         )}
       </div>
@@ -46,7 +56,7 @@ export function SyncSummaryPanel() {
       {hasBroken && (
         <div className="flex flex-col gap-1.5">
           <p className="text-xs text-amber-300">
-            The following links could not be updated automatically:
+            These links could not be updated — the text has changed or been deleted:
           </p>
           {syncSummary.broken.map((b) => (
             <BrokenLinkRow key={b.id} binding={b} />

@@ -17,7 +17,7 @@ Tests must pass before committing. All logic in `src/taskpane/lib/` is pure and 
 ```
 PowerPoint host
       ↕ Office JS
-  lib/ (registry.ts, linker.ts, syncer.ts, highlighter.ts)
+  lib/ (registry.ts, linker.ts, syncer.ts, highlighter.ts, finder.ts, navigator.ts)
       ↕ async functions
   hooks/ (useRegistry, useSelection, useHighlight)
       ↕ Zustand
@@ -103,6 +103,7 @@ Everything in `src/taskpane/lib/`:
 - `linker.ts` — `generateId`, `isLinkableShapeType`
 - `syncer.ts` — `classifyBinding`, `findLastKnownValueOffset`, `reLearnBinding`
 - `highlighter.ts` — `assignVariableColors`, `isColorCycling`, `getVariableColor`
+- `finder.ts` — `matchSnippet`
 
 Office JS calls (`PowerPoint.run`, `Office.context`) live only in the async functions that take a `context` parameter. Keep this separation.
 
@@ -124,6 +125,29 @@ Use `tests/fixtures.ts` for `makeVariable`, `makeBinding`, and `makeRegistry`. D
 
 Recoverable bindings are auto-repaired during sync via `findLastKnownValueOffset` + `getSubstring`. Broken bindings are never silently overwritten — they surface in `SyncSummaryPanel` for user action.
 
+## UX conventions
+
+### Terminology
+The app uses **"link"** (verb) and **"binding"** (noun) consistently across the UI. Do not mix in "connect", "attach", or "reference".
+
+### Loading states
+Use `"…"` (ellipsis character, not three dots) for inline loading indicators. For full-button loading states, use descriptive text like `"Syncing…"`, `"Linking…"`, `"Scanning…"`.
+
+### Error messages
+All error messages must include a dismiss button (`×`). Use red-950/40 background, red-800/50 border, red-400 text.
+
+### Health badges
+Per-variable health is derived from `registry.bindings` — do not store it in the Zustand store. Classification:
+- **"ok"** (green) — variable has bindings and all have non-empty `lastKnownValue`
+- **"broken"** (amber) — at least one binding has empty `lastKnownValue`
+- **"no links"** (gray) — variable has no bindings yet
+
+### SyncSummaryPanel auto-dismiss
+The panel auto-dismisses after 3 s when there are no broken bindings. When broken bindings exist, it stays until dismissed.
+
+### shapeName on Binding
+`Binding.shapeName` is optional (`string | undefined`). It is stored at link time for display purposes only — it is **not** used for any lookup or sync logic. Always prefer `shapeName` over raw `shapeId` in the UI, falling back to `shapeId.slice(0, 12)` for old bindings without it.
+
 ## Color palette
 
 8 fixed colors in `HIGHLIGHT_PALETTE` (`src/types/index.ts`). Variable colors are assigned by position index and cycle if more than 8 variables exist. The `HighlightToggle` legend shows a cycling warning when active.
@@ -134,3 +158,4 @@ Recoverable bindings are auto-repaired during sync via `findLastKnownValueOffset
 - **Changing `Binding` fields** — `lastKnownValue` and `charOffset` are load-bearing for recovery. Renaming them requires migrating stored JSON.
 - **Adding `registry` or `highlightMode` to the `useHighlight` save-guard `useEffect` deps** — this re-registers the handler on every state change, which is expensive and can cause double-strip on save.
 - **Calling `saveRegistry` directly from a component** — bypasses Zustand, creating a store/XML split-brain. Always go through `useRegistry`.
+- **Storing health state in Zustand** — health is cheap to derive from bindings on every render. A cached store field would go stale and require manual invalidation.
