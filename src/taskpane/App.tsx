@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { VariablesPanel } from "./components/VariablesPanel";
 import { LinkPanel } from "./components/LinkPanel";
 import { BindingsPanel } from "./components/BindingsPanel";
@@ -23,6 +23,16 @@ export function App() {
       .catch(console.error)
       .finally(() => setInitialized(true));
   }, []);
+
+  // True when any binding is broken or out of date with its variable's current value.
+  // Drives Sync All button prominence so it acts as an ambient "needs attention" indicator.
+  const needsSync = useMemo(() => {
+    return registry.bindings.some((b) => {
+      if (!b.lastKnownValue) return true; // structurally broken
+      const variable = registry.variables.find((v) => v.name === b.variableName);
+      return variable ? b.lastKnownValue !== variable.value : false; // stale
+    });
+  }, [registry]);
 
   const handleSyncAll = async () => {
     setSyncingAll(true);
@@ -53,6 +63,8 @@ export function App() {
     );
   }
 
+  const noVariables = registry.variables.length === 0;
+
   return (
     <div className="min-h-screen bg-neutral-900 text-neutral-100 flex flex-col">
       {/* Header */}
@@ -63,10 +75,17 @@ export function App() {
         </div>
         <button
           onClick={() => void handleSyncAll()}
-          disabled={syncingAll || registry.variables.length === 0}
-          className="text-xs bg-cyan-700 hover:bg-cyan-600 disabled:bg-neutral-800 disabled:text-neutral-600 text-white rounded px-2.5 py-1 transition-colors font-medium"
+          disabled={syncingAll || noVariables}
+          title={needsSync ? "Bindings are out of date — click to sync" : "Sync all linked shapes"}
+          className={`text-xs rounded px-2.5 py-1 transition-colors font-medium ${
+            syncingAll || noVariables
+              ? "bg-neutral-800 text-neutral-600"
+              : needsSync
+              ? "bg-cyan-500 hover:bg-cyan-400 text-white shadow-[0_0_8px_rgba(6,182,212,0.4)]"
+              : "bg-cyan-700 hover:bg-cyan-600 text-white"
+          }`}
         >
-          {syncingAll ? "Syncing…" : "Sync All"}
+          {syncingAll ? "Syncing…" : needsSync ? "Sync All ●" : "Sync All"}
         </button>
       </div>
 

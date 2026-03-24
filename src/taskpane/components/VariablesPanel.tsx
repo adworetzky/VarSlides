@@ -5,7 +5,7 @@ import { useVarSyncStore } from "../store/useVarSyncStore";
 import { FindLinkPanel } from "./FindLinkPanel";
 import type { Variable, VarSyncRegistry } from "../../types";
 
-type VariableHealth = "ok" | "broken" | "unknown";
+type VariableHealth = "ok" | "stale" | "broken" | "unknown";
 
 export function VariablesPanel() {
   const {
@@ -47,9 +47,16 @@ export function VariablesPanel() {
     const health = new Map<string, VariableHealth>();
     for (const v of registry.variables) {
       const vb = registry.bindings.filter((b) => b.variableName === v.name);
-      if (vb.length === 0) health.set(v.name, "unknown");
-      else if (vb.some((b) => !b.lastKnownValue)) health.set(v.name, "broken");
-      else health.set(v.name, "ok");
+      if (vb.length === 0) {
+        health.set(v.name, "unknown");
+      } else if (vb.some((b) => !b.lastKnownValue)) {
+        health.set(v.name, "broken");
+      } else if (vb.some((b) => b.lastKnownValue !== v.value)) {
+        // Variable value has changed since last sync — slides are out of date
+        health.set(v.name, "stale");
+      } else {
+        health.set(v.name, "ok");
+      }
     }
     return health;
   }, [registry.variables, registry.bindings]);
@@ -175,9 +182,10 @@ export function VariablesPanel() {
   };
 
   const healthBadge: Record<VariableHealth, { label: string; cls: string; title: string }> = {
-    ok:      { label: "ok",     cls: "text-green-400 bg-green-950/40",  title: "All bindings healthy" },
-    broken:  { label: "broken", cls: "text-amber-400 bg-amber-950/40",  title: "Some bindings broken — run Sync" },
-    unknown: { label: "no links", cls: "text-neutral-500 bg-neutral-800", title: "No bindings yet" },
+    ok:      { label: "✓ synced",   cls: "text-green-400 bg-green-950/40",  title: "All bindings are up to date" },
+    stale:   { label: "⟳ stale",   cls: "text-sky-400 bg-sky-950/40",      title: "Value changed since last sync — run Sync to update slides" },
+    broken:  { label: "! broken",   cls: "text-amber-400 bg-amber-950/40",  title: "Some bindings could not be recovered — run Sync to review" },
+    unknown: { label: "— no links", cls: "text-neutral-500 bg-neutral-800", title: "No bindings yet — use Find or Link tab to link this variable" },
   };
 
   return (
