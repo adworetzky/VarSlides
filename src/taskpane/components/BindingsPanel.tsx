@@ -1,11 +1,13 @@
 import React, { useState } from "react";
 import { useRegistry } from "../hooks/useRegistry";
 import { BrokenLinkRow } from "./BrokenLinkRow";
+import { navigateToBinding } from "../lib/navigator";
 import type { Binding, BrokenBinding } from "../../types";
 
 export function BindingsPanel() {
   const { registry, removeBinding } = useRegistry();
   const [unlinking, setUnlinking] = useState<string | null>(null);
+  const [navigating, setNavigating] = useState<string | null>(null);
 
   const { bindings, variables } = registry;
 
@@ -22,7 +24,6 @@ export function BindingsPanel() {
     );
   }
 
-  // Group bindings by variable name
   const grouped = new Map<string, Binding[]>();
   for (const b of bindings) {
     if (!grouped.has(b.variableName)) grouped.set(b.variableName, []);
@@ -38,14 +39,19 @@ export function BindingsPanel() {
     }
   };
 
-  // Identify broken bindings (state determined from lastKnownValue heuristics without live Office context)
-  // Show them at the top
+  const handleNavigate = async (b: Binding) => {
+    setNavigating(b.id);
+    try {
+      await navigateToBinding(b);
+    } finally {
+      setNavigating(null);
+    }
+  };
+
+  // Surface bindings with empty lastKnownValue (structurally broken) at the top.
+  // Runtime classification (Clean/Recoverable/Broken) only runs during sync.
   const brokenBindings: BrokenBinding[] = bindings
-    .filter((b) => {
-      // Without live paragraph text, we use a heuristic: flag as potentially broken
-      // only when lastKnownValue is empty string (which is always broken)
-      return !b.lastKnownValue;
-    })
+    .filter((b) => !b.lastKnownValue)
     .map((b) => ({
       ...b,
       slideNumber: b.slideIndex + 1,
@@ -61,7 +67,6 @@ export function BindingsPanel() {
         </span>
       </h2>
 
-      {/* Broken bindings at top */}
       {brokenBindings.length > 0 && (
         <div className="flex flex-col gap-1.5">
           {brokenBindings.map((b) => (
@@ -70,7 +75,6 @@ export function BindingsPanel() {
         </div>
       )}
 
-      {/* Grouped by variable */}
       {Array.from(grouped.entries()).map(([varName, varBindings]) => {
         const variable = variables.find((v) => v.name === varName);
         return (
@@ -94,18 +98,25 @@ export function BindingsPanel() {
                 className="ml-3 bg-neutral-800/40 border border-neutral-700/60 rounded p-1.5 flex items-start gap-2"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className="text-neutral-400">Slide {b.slideIndex + 1}</span>
+                  <div className="flex items-center gap-1 text-xs">
+                    {/* Navigate button — jumps to the slide and selects the shape */}
+                    <button
+                      onClick={() => void handleNavigate(b)}
+                      disabled={navigating === b.id}
+                      className="text-cyan-500 hover:text-cyan-300 disabled:text-neutral-600 transition-colors font-medium flex-shrink-0"
+                      title="Go to slide"
+                    >
+                      {navigating === b.id ? "…" : `Slide ${b.slideIndex + 1}`}
+                    </button>
                     <span className="text-neutral-600">·</span>
-                    <span className="text-neutral-400 truncate">{b.shapeId}</span>
+                    <span className="text-neutral-400 truncate" title={b.shapeId}>
+                      {b.shapeId.slice(0, 8)}…
+                    </span>
                   </div>
                   <p className="text-xs font-mono text-neutral-300 truncate mt-0.5">
                     {b.lastKnownValue || (
                       <span className="text-red-400 italic">empty — broken</span>
                     )}
-                  </p>
-                  <p className="text-xs text-neutral-600 mt-0.5">
-                    para {b.paragraphIndex}, run {b.runIndex}, char {b.charOffset}
                   </p>
                 </div>
                 <button

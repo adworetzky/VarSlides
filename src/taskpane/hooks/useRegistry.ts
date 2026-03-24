@@ -114,6 +114,32 @@ export function useRegistry() {
     [registry, persist]
   );
 
+  const renameVariable = useCallback(
+    async (oldName: string, newName: string) => {
+      if (registry.variables.find((v) => v.name === newName)) {
+        throw new Error(`Variable "${newName}" already exists`);
+      }
+      const next: VarSyncRegistry = {
+        ...registry,
+        variables: registry.variables.map((v) =>
+          v.name === oldName ? { ...v, name: newName } : v
+        ),
+        bindings: registry.bindings.map((b) =>
+          b.variableName === oldName ? { ...b, variableName: newName } : b
+        ),
+      };
+      await persist(next);
+    },
+    [registry, persist]
+  );
+
+  const replaceRegistry = useCallback(
+    async (next: VarSyncRegistry) => {
+      await persist(next);
+    },
+    [persist]
+  );
+
   const runCleanup = useCallback(async () => {
     const clean = cleanOrphanedBindings(registry);
     if (clean.bindings.length !== registry.bindings.length) {
@@ -127,6 +153,8 @@ export function useRegistry() {
     addVariable,
     updateVariable,
     deleteVariable,
+    renameVariable,
+    replaceRegistry,
     addBinding,
     removeBinding,
     updateBinding,

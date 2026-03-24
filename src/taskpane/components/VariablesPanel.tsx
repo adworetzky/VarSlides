@@ -2,22 +2,38 @@ import React, { useMemo, useState, useRef } from "react";
 import { useRegistry } from "../hooks/useRegistry";
 import { syncVariable } from "../lib/syncer";
 import { useVarSyncStore } from "../store/useVarSyncStore";
-import type { Variable } from "../../types";
+import { FindLinkPanel } from "./FindLinkPanel";
+import type { Variable, VarSyncRegistry } from "../../types";
+
+type VariableHealth = "ok" | "broken" | "unknown";
 
 export function VariablesPanel() {
-  const { registry, addVariable, updateVariable, deleteVariable, updateAllBindings } =
-    useRegistry();
+  const {
+    registry,
+    addVariable,
+    updateVariable,
+    deleteVariable,
+    renameVariable,
+    replaceRegistry,
+    updateAllBindings,
+  } = useRegistry();
   const { setSyncSummary } = useVarSyncStore();
 
+  const [filterText, setFilterText] = useState("");
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [renamingName, setRenamingName] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [newVarName, setNewVarName] = useState("");
   const [newVarValue, setNewVarValue] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [deletingName, setDeletingName] = useState<string | null>(null);
+  const [findLinkVar, setFindLinkVar] = useState<Variable | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const bindingCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -26,6 +42,25 @@ export function VariablesPanel() {
     }
     return counts;
   }, [registry.bindings]);
+
+  const variableHealth = useMemo(() => {
+    const health = new Map<string, VariableHealth>();
+    for (const v of registry.variables) {
+      const vb = registry.bindings.filter((b) => b.variableName === v.name);
+      if (vb.length === 0) health.set(v.name, "unknown");
+      else if (vb.some((b) => !b.lastKnownValue)) health.set(v.name, "broken");
+      else health.set(v.name, "ok");
+    }
+    return health;
+  }, [registry.variables, registry.bindings]);
+
+  const filteredVariables = useMemo(() => {
+    if (!filterText) return registry.variables;
+    const lower = filterText.toLowerCase();
+    return registry.variables.filter(
+      (v) => v.name.toLowerCase().includes(lower) || v.value.toLowerCase().includes(lower)
+    );
+  }, [registry.variables, filterText]);
 
   const handleStartEdit = (v: Variable) => {
     setEditingName(v.name);
@@ -41,6 +76,25 @@ export function VariablesPanel() {
     } finally {
       setEditingName(null);
     }
+  };
+
+  const handleStartRename = (v: Variable) => {
+    setRenamingName(v.name);
+    setRenameValue(v.name);
+    setTimeout(() => renameInputRef.current?.focus(), 0);
+  };
+
+  const handleCommitRename = async (oldName: string) => {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== oldName) {
+      try {
+        await renameVariable(oldName, trimmed);
+        if (findLinkVar?.name === oldName) setFindLinkVar(null);
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    }
+    setRenamingName(null);
   };
 
   const handleAddVariable = async () => {
@@ -68,6 +122,7 @@ export function VariablesPanel() {
   const handleConfirmDelete = async (name: string) => {
     try {
       await deleteVariable(name);
+      if (findLinkVar?.name === name) setFindLinkVar(null);
       setDeletingName(null);
     } catch (e) {
       setError((e as Error).message);
@@ -89,6 +144,48 @@ export function VariablesPanel() {
     }
   };
 
+  const handleExport = () => {
+    const json = JSON.stringify(registry, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "varsync-registry.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as VarSyncRegistry;
+      if (!Array.isArray(parsed.variables) || !Array.isArray(parsed.bindings)) {
+        throw new Error("Invalid registry format");
+      }
+      await replaceRegistry(parsed);
+      setFindLinkVar(null);
+      setError(null);
+    } catch (e) {
+      setError(`Import failed: ${(e as Error).message}`);
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
+
+  const healthDotClass: Record<VariableHealth, string> = {
+    ok: "text-green-400",
+    broken: "text-amber-400",
+    unknown: "text-neutral-600",
+  };
+
+  const healthTitle: Record<VariableHealth, string> = {
+    ok: "All bindings healthy",
+    broken: "Some bindings broken — run Sync",
+    unknown: "No bindings yet",
+  };
+
   return (
     <div className="flex flex-col gap-2">
       {/* Header */}
@@ -96,25 +193,45 @@ export function VariablesPanel() {
         <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">
           Variables
         </h2>
-        <button
-          onClick={() => {
-            setShowAddForm(true);
-            setError(null);
-          }}
-          className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors font-medium"
-        >
-          + Add
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExport}
+            disabled={registry.variables.length === 0}
+            className="text-xs text-neutral-500 hover:text-neutral-300 disabled:text-neutral-700 transition-colors"
+            title="Export registry as JSON"
+          >
+            Export
+          </button>
+          <label
+            className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors cursor-pointer"
+            title="Import registry from JSON"
+          >
+            Import
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={(e) => void handleImport(e)}
+            />
+          </label>
+          <button
+            onClick={() => {
+              setShowAddForm(true);
+              setError(null);
+            }}
+            className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors font-medium"
+          >
+            + Add
+          </button>
+        </div>
       </div>
 
       {/* Error */}
       {error && (
         <div className="text-xs text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-1">
           {error}
-          <button
-            onClick={() => setError(null)}
-            className="ml-2 text-red-300 hover:text-red-100"
-          >
+          <button onClick={() => setError(null)} className="ml-2 text-red-300 hover:text-red-100">
             ×
           </button>
         </div>
@@ -158,75 +275,141 @@ export function VariablesPanel() {
         </div>
       )}
 
-      {/* Variable List */}
+      {/* Search filter — only shown when there are enough variables to warrant it */}
+      {registry.variables.length > 3 && (
+        <input
+          className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-cyan-500"
+          placeholder="Filter variables…"
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+        />
+      )}
+
+      {/* Empty state */}
       {registry.variables.length === 0 && !showAddForm && (
         <p className="text-xs text-neutral-500 text-center py-4">
           No variables yet. Click + Add to create one.
         </p>
       )}
 
-      {registry.variables.map((v) => {
+      {filteredVariables.length === 0 && filterText && (
+        <p className="text-xs text-neutral-500 text-center py-2">
+          No variables match &ldquo;{filterText}&rdquo;
+        </p>
+      )}
+
+      {/* Variable List */}
+      {filteredVariables.map((v) => {
         const count = bindingCounts.get(v.name) ?? 0;
         const isEditing = editingName === v.name;
+        const isRenaming = renamingName === v.name;
         const isDeleting = deletingName === v.name;
+        const health = variableHealth.get(v.name) ?? "unknown";
+        const showFindLink = findLinkVar?.name === v.name;
 
         return (
           <div
             key={v.name}
             className="bg-neutral-800/50 border border-neutral-700/80 rounded p-2 flex flex-col gap-1"
           >
-            <div className="flex items-center gap-2">
-              {/* Color chip */}
-              <span
-                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                style={{ backgroundColor: v.color }}
-              />
-              {/* Name */}
-              <span className="text-xs font-medium text-neutral-200 flex-1 truncate">
-                {v.name}
-              </span>
-              {/* Binding count */}
-              <span className="text-xs text-neutral-500">{count} link{count !== 1 ? "s" : ""}</span>
-              {/* Sync button */}
+            {/* Name row */}
+            {isRenaming ? (
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: v.color }}
+                />
+                <input
+                  ref={renameInputRef}
+                  className="flex-1 bg-neutral-900 border border-cyan-600 rounded px-2 py-0.5 text-xs text-neutral-100 focus:outline-none"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={() => void handleCommitRename(v.name)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void handleCommitRename(v.name);
+                    if (e.key === "Escape") setRenamingName(null);
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: v.color }}
+                />
+                <button
+                  className="text-xs font-medium text-neutral-200 hover:text-neutral-100 text-left truncate flex-1"
+                  onClick={() => handleStartRename(v)}
+                  title="Click to rename"
+                >
+                  {v.name}
+                </button>
+                <span
+                  className={`text-xs leading-none ${healthDotClass[health]}`}
+                  title={healthTitle[health]}
+                >
+                  {health === "unknown" ? "○" : "●"}
+                </span>
+                <span className="text-xs text-neutral-500">
+                  {count} link{count !== 1 ? "s" : ""}
+                </span>
+                <button
+                  onClick={() => void handleSync(v)}
+                  disabled={syncing !== null}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 disabled:text-neutral-600 transition-colors"
+                  title="Sync this variable"
+                >
+                  {syncing === v.name ? "..." : "Sync"}
+                </button>
+                <button
+                  onClick={() => handleDeleteRequest(v.name)}
+                  className="text-xs text-neutral-500 hover:text-red-400 transition-colors"
+                  title="Delete variable"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            {/* Value row — inline edit + Find & Link toggle */}
+            <div className="flex items-center gap-1.5">
+              {isEditing ? (
+                <input
+                  ref={editInputRef}
+                  className="flex-1 bg-neutral-900 border border-cyan-600 rounded px-2 py-0.5 text-xs text-neutral-100 focus:outline-none"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onBlur={() => void handleCommitEdit(v.name)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void handleCommitEdit(v.name);
+                    if (e.key === "Escape") setEditingName(null);
+                  }}
+                />
+              ) : (
+                <button
+                  className="flex-1 text-left text-xs text-cyan-300 font-mono hover:text-cyan-200 transition-colors truncate"
+                  onClick={() => handleStartEdit(v)}
+                  title="Click to edit value"
+                >
+                  {v.value || <span className="text-neutral-500 italic">empty</span>}
+                </button>
+              )}
               <button
-                onClick={() => void handleSync(v)}
-                disabled={syncing !== null}
-                className="text-xs text-cyan-400 hover:text-cyan-300 disabled:text-neutral-600 transition-colors"
-                title="Sync this variable"
+                onClick={() => setFindLinkVar(showFindLink ? null : v)}
+                className={`text-xs flex-shrink-0 transition-colors ${
+                  showFindLink
+                    ? "text-cyan-300 font-medium"
+                    : "text-neutral-500 hover:text-cyan-400"
+                }`}
+                title="Find & Link occurrences in the deck"
               >
-                {syncing === v.name ? "..." : "Sync"}
-              </button>
-              {/* Delete button */}
-              <button
-                onClick={() => handleDeleteRequest(v.name)}
-                className="text-xs text-neutral-500 hover:text-red-400 transition-colors"
-                title="Delete variable"
-              >
-                ×
+                Find
               </button>
             </div>
 
-            {/* Value — inline edit */}
-            {isEditing ? (
-              <input
-                ref={editInputRef}
-                className="bg-neutral-900 border border-cyan-600 rounded px-2 py-0.5 text-xs text-neutral-100 focus:outline-none w-full"
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onBlur={() => void handleCommitEdit(v.name)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void handleCommitEdit(v.name);
-                  if (e.key === "Escape") setEditingName(null);
-                }}
-              />
-            ) : (
-              <button
-                className="text-left text-xs text-cyan-300 font-mono hover:text-cyan-200 transition-colors truncate"
-                onClick={() => handleStartEdit(v)}
-                title="Click to edit value"
-              >
-                {v.value || <span className="text-neutral-500 italic">empty</span>}
-              </button>
+            {/* Find & Link inline panel */}
+            {showFindLink && (
+              <FindLinkPanel variable={v} onClose={() => setFindLinkVar(null)} />
             )}
 
             {/* Delete confirmation */}

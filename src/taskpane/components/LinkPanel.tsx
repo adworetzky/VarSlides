@@ -17,6 +17,14 @@ export function LinkPanel() {
     (v) => v.name === selectedVarName
   );
 
+  const alreadyLinked = !!(
+    selectedVariable &&
+    selectionContext &&
+    registry.bindings.some(
+      (b) => b.variableName === selectedVarName && b.shapeId === selectionContext.shapeId
+    )
+  );
+
   const handleLinkShape = async () => {
     if (!selectionContext || !selectedVariable) return;
     setError(null);
@@ -168,6 +176,12 @@ export function LinkPanel() {
             </option>
           ))}
         </select>
+      )}
+
+      {alreadyLinked && (
+        <p className="text-xs text-amber-400 bg-amber-950/30 border border-amber-800/40 rounded px-2 py-1">
+          This shape already has a binding for {selectedVarName}.
+        </p>
       )}
 
       {/* Action buttons */}
