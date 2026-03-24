@@ -104,13 +104,14 @@ When syncing, each binding is classified:
 
 ## Variable health badges
 
-Each variable row shows a compact status badge derived from its bindings:
+Each variable row shows a compact status badge derived from its bindings. The `Sync All` button in the header also glows when any binding is stale or broken.
 
-| Badge | Meaning |
-|---|---|
-| **ok** (green) | All bindings are healthy |
-| **broken** (amber) | At least one binding has an empty last-known value — run Sync |
-| **no links** (gray) | No bindings yet for this variable |
+| Badge | Color | Meaning |
+|---|---|---|
+| ✓ synced | green | All bindings match the variable's current value |
+| ⟳ stale | sky blue | Value changed since last sync — slides are out of date |
+| ! broken | amber | At least one binding could not be recovered — needs manual attention |
+| — no links | gray | No bindings yet for this variable |
 
 ## Highlight mode
 

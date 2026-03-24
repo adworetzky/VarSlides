@@ -137,10 +137,13 @@ Use `"…"` (ellipsis character, not three dots) for inline loading indicators. 
 All error messages must include a dismiss button (`×`). Use red-950/40 background, red-800/50 border, red-400 text.
 
 ### Health badges
-Per-variable health is derived from `registry.bindings` — do not store it in the Zustand store. Classification:
-- **"ok"** (green) — variable has bindings and all have non-empty `lastKnownValue`
-- **"broken"** (amber) — at least one binding has empty `lastKnownValue`
-- **"no links"** (gray) — variable has no bindings yet
+Per-variable health is derived from `registry.bindings` — do not store it in the Zustand store. Four states, checked in priority order:
+- **"✓ synced"** (green) — all bindings have `lastKnownValue === variable.value`
+- **"⟳ stale"** (sky) — all bindings have a non-empty `lastKnownValue`, but at least one differs from the current `variable.value` (changed since last sync)
+- **"! broken"** (amber) — at least one binding has empty `lastKnownValue` (structurally broken)
+- **"— no links"** (gray) — variable has no bindings yet
+
+`Sync All` button in the header glows and shows a `●` dot whenever any binding is stale or broken.
 
 ### SyncSummaryPanel auto-dismiss
 The panel auto-dismisses after 3 s when there are no broken bindings. When broken bindings exist, it stays until dismissed.
