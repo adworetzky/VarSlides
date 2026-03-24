@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { useRegistry } from "../hooks/useRegistry";
 import { BrokenLinkRow } from "./BrokenLinkRow";
-import { classifyBinding } from "../lib/syncer";
 import type { Binding, BrokenBinding } from "../../types";
 
 export function BindingsPanel() {

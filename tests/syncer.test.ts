@@ -1,40 +1,9 @@
-/**
- * syncer.test.ts
- *
- * Tests for pure syncer functions (classifyBinding, findLastKnownValueOffset,
- * reLearnBinding) — no Office JS required.
- */
-
 import {
   classifyBinding,
   findLastKnownValueOffset,
   reLearnBinding,
 } from "../src/taskpane/lib/syncer";
-import type { Binding } from "../src/types";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ─────────────────────────────────────────────────────────────────────────────
-
-function makeBinding(overrides: Partial<Binding> = {}): Binding {
-  return {
-    id: "b1",
-    variableName: "AUM",
-    shapeId: "shape-1",
-    slideIndex: 0,
-    paragraphIndex: 0,
-    runIndex: 1,
-    lastKnownValue: "$70B",
-    charOffset: 14,
-    originalFontColor: null,
-    originalHighlightColor: null,
-    ...overrides,
-  };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// classifyBinding
-// ─────────────────────────────────────────────────────────────────────────────
+import { makeBinding } from "./fixtures";
 
 describe("classifyBinding", () => {
   it('returns "clean" when run at runIndex contains lastKnownValue', () => {
@@ -83,10 +52,6 @@ describe("classifyBinding", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// findLastKnownValueOffset
-// ─────────────────────────────────────────────────────────────────────────────
-
 describe("findLastKnownValueOffset", () => {
   it("returns correct offset when value is present", () => {
     const para = "The firm's AUM is $70B across strategies";
@@ -108,10 +73,6 @@ describe("findLastKnownValueOffset", () => {
     expect(findLastKnownValueOffset("", "any text")).toBe(0);
   });
 });
-
-// ─────────────────────────────────────────────────────────────────────────────
-// reLearnBinding
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe("reLearnBinding", () => {
   it("updates runIndex, charOffset, and lastKnownValue", () => {

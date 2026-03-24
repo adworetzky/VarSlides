@@ -1,23 +1,10 @@
-/**
- * registry.ts
- *
- * Serialize / deserialize the VarSyncRegistry to/from a PowerPoint custom XML part.
- * All writes go through Zustand first; these functions are called by hooks, never
- * directly from components.
- */
-
 import type { VarSyncRegistry, Binding } from "../../types";
 import { REGISTRY_NAMESPACE, REGISTRY_VERSION } from "../../types";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-function emptyRegistry(): VarSyncRegistry {
+export function emptyRegistry(): VarSyncRegistry {
   return { version: REGISTRY_VERSION, variables: [], bindings: [] };
 }
 
-/** Wrap JSON payload in an XML document under our namespace. */
 function toXml(registry: VarSyncRegistry): string {
   const json = JSON.stringify(registry);
   // Escape special XML characters inside the JSON string
@@ -28,7 +15,6 @@ function toXml(registry: VarSyncRegistry): string {
   return `<?xml version="1.0" encoding="utf-8"?><varsync xmlns="${REGISTRY_NAMESPACE}">${escaped}</varsync>`;
 }
 
-/** Extract the JSON payload from our XML part. */
 function fromXml(xml: string): VarSyncRegistry {
   const match = xml.match(/<varsync[^>]*>([\s\S]*?)<\/varsync>/);
   if (!match) return emptyRegistry();
@@ -43,14 +29,6 @@ function fromXml(xml: string): VarSyncRegistry {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Public API
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Load the registry from the file's custom XML part.
- * Returns an empty registry if none exists yet.
- */
 export async function loadRegistry(): Promise<VarSyncRegistry> {
   return new Promise<VarSyncRegistry>((resolve, reject) => {
     Office.context.document.customXmlParts.getByNamespaceAsync(
@@ -68,7 +46,6 @@ export async function loadRegistry(): Promise<VarSyncRegistry> {
           return;
         }
 
-        // Use the first matching part
         parts[0].getXmlAsync((xmlResult) => {
           if (xmlResult.status !== Office.AsyncResultStatus.Succeeded) {
             resolve(emptyRegistry());
@@ -82,15 +59,10 @@ export async function loadRegistry(): Promise<VarSyncRegistry> {
   });
 }
 
-/**
- * Persist the registry to custom XML.
- * Replaces any existing part under our namespace.
- */
 export async function saveRegistry(registry: VarSyncRegistry): Promise<void> {
   const xml = toXml(registry);
 
   return new Promise<void>((resolve, reject) => {
-    // First remove any existing parts under our namespace
     Office.context.document.customXmlParts.getByNamespaceAsync(
       REGISTRY_NAMESPACE,
       (queryResult) => {
@@ -129,24 +101,19 @@ export async function saveRegistry(registry: VarSyncRegistry): Promise<void> {
   });
 }
 
-/**
- * Remove bindings that reference shapes or slides that no longer exist.
- * Called automatically on every load before data surfaces to the store.
- *
- * Note: Without full slide/shape enumeration at load time this performs a
- * structural sanity check only (removes obviously malformed records).
- * Full orphan detection requires Office JS context and is done in useRegistry.
- */
+// Structural sanity check only — full orphan detection (missing slides/shapes) requires
+// Office JS context and is done in useRegistry on load.
 export function cleanOrphanedBindings(registry: VarSyncRegistry): VarSyncRegistry {
   const validVariableNames = new Set(registry.variables.map((v) => v.name));
 
-  const cleanBindings: Binding[] = registry.bindings.filter((b) => {
-    // Drop bindings for variables that no longer exist
-    if (!validVariableNames.has(b.variableName)) return false;
-    // Drop structurally invalid bindings
-    if (!b.id || !b.shapeId || b.slideIndex < 0 || b.runIndex < 0) return false;
-    return true;
-  });
+  const cleanBindings: Binding[] = registry.bindings.filter(
+    (b) =>
+      validVariableNames.has(b.variableName) &&
+      b.id &&
+      b.shapeId &&
+      b.slideIndex >= 0 &&
+      b.runIndex >= 0
+  );
 
   return { ...registry, bindings: cleanBindings };
 }

@@ -1,14 +1,4 @@
-/**
- * linker.test.ts
- *
- * Tests for pure linker utility functions.
- */
-
 import { generateId, isLinkableShapeType } from "../src/taskpane/lib/linker";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// generateId
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe("generateId", () => {
   it("generates a non-empty string", () => {
@@ -24,16 +14,11 @@ describe("generateId", () => {
 
   it("generates IDs in UUID-like format", () => {
     const id = generateId();
-    // UUID v4 pattern: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
     expect(id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     );
   });
 });
-
-// ─────────────────────────────────────────────────────────────────────────────
-// isLinkableShapeType
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe("isLinkableShapeType", () => {
   it("returns true for a plain text box shape", () => {

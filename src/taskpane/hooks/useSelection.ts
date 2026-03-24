@@ -1,17 +1,6 @@
-/**
- * useSelection.ts
- *
- * Watch the active PowerPoint selection and expose a SelectionContext.
- *
- * NOTE: PowerPoint Office JS selection events fire on shape selection changes.
- * Text-level selection within a shape is queryable via the active selection
- * API but does NOT fire a selection-changed event — the hook polls on demand
- * and relies on the user clicking "Link Selection" to capture the text selection.
- *
- * Platform notes (see NOTES.md):
- *   - Windows desktop: PowerPoint.TextRange selection works reliably.
- *   - Mac / Web: getSelectedDataAsync may be needed as a fallback.
- */
+// NOTE: DocumentSelectionChanged fires on shape selection changes but NOT on
+// text selection changes within a shape. Text selection is captured on-demand
+// when the user clicks "Link Selection". See NOTES.md for platform details.
 
 import { useCallback, useEffect } from "react";
 import { useVarSyncStore } from "../store/useVarSyncStore";
@@ -20,12 +9,9 @@ import type { SelectionContext } from "../../types";
 export function useSelection() {
   const { selectionContext, setSelectionContext } = useVarSyncStore();
 
-  // ─── Read current selection ──────────────────────────────────────────────
-
   const refreshSelection = useCallback(async () => {
     try {
       await PowerPoint.run(async (context) => {
-        // Attempt to get the selected shapes
         const selectedShapes = context.presentation.getSelectedShapes();
         selectedShapes.load("items");
         await context.sync();
@@ -38,26 +24,25 @@ export function useSelection() {
         const shape = selectedShapes.items[0];
         shape.load("id, name");
 
-        // Determine which slide this shape is on
         const slides = context.presentation.slides;
         slides.load("items");
-        await context.sync();
-        await context.sync(); // second sync for shape properties
+        await context.sync(); // resolves shape properties + slides in one round-trip
 
-        // Find slide index by searching shapes
+        // Determine which slide this shape is on by scanning all slides' shapes.
+        // Batch-load all slides' shape collections before syncing.
+        for (const slide of slides.items) {
+          slide.shapes.load("items");
+        }
+        await context.sync();
+
         let slideIndex = 0;
         for (let i = 0; i < slides.items.length; i++) {
-          const slideShapes = slides.items[i].shapes;
-          slideShapes.load("items");
-          await context.sync();
-          const found = slideShapes.items.find((s) => s.id === shape.id);
-          if (found) {
+          if (slides.items[i].shapes.items.find((s) => s.id === shape.id)) {
             slideIndex = i;
             break;
           }
         }
 
-        // Check for text selection
         let hasTextSelection = false;
         try {
           const selectedRange = context.presentation.getSelectedTextRange();
@@ -66,33 +51,27 @@ export function useSelection() {
           hasTextSelection =
             typeof selectedRange.text === "string" && selectedRange.text.length > 0;
         } catch {
-          // No text selection active
           hasTextSelection = false;
         }
 
-        const ctx: SelectionContext = {
+        setSelectionContext({
           shapeId: shape.id,
           shapeName: shape.name,
           slideIndex,
           hasTextSelection,
-        };
-        setSelectionContext(ctx);
+        });
       });
     } catch {
       setSelectionContext(null);
     }
   }, [setSelectionContext]);
 
-  // ─── Subscribe to selection change events ────────────────────────────────
-
   useEffect(() => {
     let handler: Office.EventHandlerResult | null = null;
 
     Office.context.document.addHandlerAsync(
       Office.EventType.DocumentSelectionChanged,
-      () => {
-        void refreshSelection();
-      },
+      () => { void refreshSelection(); },
       (result) => {
         if (result.status === Office.AsyncResultStatus.Succeeded) {
           handler = result.value as Office.EventHandlerResult;
@@ -100,7 +79,6 @@ export function useSelection() {
       }
     );
 
-    // Initial read
     void refreshSelection();
 
     return () => {

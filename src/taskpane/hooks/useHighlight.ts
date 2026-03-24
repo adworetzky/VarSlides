@@ -1,20 +1,10 @@
-/**
- * useHighlight.ts
- *
- * Manage highlight mode state — toggling highlights on/off and guarding
- * against highlights persisting to saved files.
- */
-
 import { useCallback, useEffect } from "react";
 import { useVarSyncStore } from "../store/useVarSyncStore";
 import { applyHighlights, stripHighlights } from "../lib/highlighter";
 import { saveRegistry } from "../lib/registry";
-import type { VarSyncRegistry } from "../../types";
 
 export function useHighlight() {
   const { registry, highlightMode, setHighlightMode, setRegistry } = useVarSyncStore();
-
-  // ─── Toggle ───────────────────────────────────────────────────────────────
 
   const enableHighlights = useCallback(async () => {
     const updatedRegistry = await applyHighlights(registry);
@@ -35,60 +25,47 @@ export function useHighlight() {
     }
   }, [highlightMode, enableHighlights, disableHighlights]);
 
-  // ─── Save guard ───────────────────────────────────────────────────────────
-  //
-  // PowerPoint does not expose a reliable before-save event in Office JS for
-  // all platforms. We register a handler where available; on unsupported
-  // platforms we warn the user via the UI (see HighlightToggle component).
-
+  // Register the before-save guard once on mount. Read current state from the
+  // store at event time so the handler doesn't stale-close over registry/mode.
+  // DocumentBeforeSave is not available on all platforms — the HighlightToggle
+  // component shows a persistent warning when highlights are active as a fallback.
   useEffect(() => {
     let registered = false;
 
-    const tryRegisterSaveGuard = () => {
-      try {
-        // DocumentBeforeSave is not universally available; wrap in try/catch
-        Office.context.document.addHandlerAsync(
-          // @ts-expect-error — DocumentBeforeSave not in all @types/office-js versions
-          "documentBeforeSave",
-          async (_event: unknown) => {
-            if (highlightMode) {
-              await stripHighlights(registry);
-              setHighlightMode(false);
-              // Persist the clean registry so the save writes clean data
-              await saveRegistry(registry);
-            }
-          },
-          (result) => {
-            registered = result.status === Office.AsyncResultStatus.Succeeded;
-          }
-        );
-      } catch {
-        // Save guard not available on this platform; UI warning displayed instead
+    const onBeforeSave = async (_event: unknown) => {
+      const { registry: r, highlightMode: on, setHighlightMode: setMode } =
+        useVarSyncStore.getState();
+      if (on) {
+        await stripHighlights(r);
+        setMode(false);
+        await saveRegistry(r);
       }
     };
 
-    tryRegisterSaveGuard();
+    try {
+      Office.context.document.addHandlerAsync(
+        // @ts-expect-error — not in all @types/office-js versions
+        "documentBeforeSave",
+        onBeforeSave,
+        (result) => {
+          registered = result.status === Office.AsyncResultStatus.Succeeded;
+        }
+      );
+    } catch {
+      // Not available on this platform; UI warning is the fallback
+    }
 
     return () => {
       if (registered) {
         try {
-          Office.context.document.removeHandlerAsync(
-            // @ts-expect-error
-            "documentBeforeSave",
-            {},
-            () => {}
-          );
+          // @ts-expect-error
+          Office.context.document.removeHandlerAsync("documentBeforeSave", {}, () => {});
         } catch {
           // noop
         }
       }
     };
-  }, [highlightMode, registry, setHighlightMode]);
+  }, []); // register once — handler reads live state via getState()
 
-  return {
-    highlightMode,
-    enableHighlights,
-    disableHighlights,
-    toggleHighlights,
-  };
+  return { highlightMode, enableHighlights, disableHighlights, toggleHighlights };
 }

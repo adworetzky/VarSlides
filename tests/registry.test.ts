@@ -1,47 +1,5 @@
-/**
- * registry.test.ts
- *
- * Tests for pure registry functions that do not require Office JS.
- */
-
 import { cleanOrphanedBindings } from "../src/taskpane/lib/registry";
-import type { VarSyncRegistry, Variable, Binding } from "../src/types";
-import { REGISTRY_VERSION } from "../src/types";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ─────────────────────────────────────────────────────────────────────────────
-
-function makeVariable(name: string): Variable {
-  return { name, value: "$70B", color: "#00C8E8", createdAt: new Date().toISOString() };
-}
-
-function makeBinding(overrides: Partial<Binding> = {}): Binding {
-  return {
-    id: "test-id-1",
-    variableName: "AUM",
-    shapeId: "shape-1",
-    slideIndex: 0,
-    paragraphIndex: 0,
-    runIndex: 0,
-    lastKnownValue: "$70B",
-    charOffset: 0,
-    originalFontColor: null,
-    originalHighlightColor: null,
-    ...overrides,
-  };
-}
-
-function makeRegistry(
-  variables: Variable[] = [],
-  bindings: Binding[] = []
-): VarSyncRegistry {
-  return { version: REGISTRY_VERSION, variables, bindings };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// cleanOrphanedBindings
-// ─────────────────────────────────────────────────────────────────────────────
+import { makeVariable, makeBinding, makeRegistry } from "./fixtures";
 
 describe("cleanOrphanedBindings", () => {
   it("keeps bindings whose variable still exists", () => {

@@ -1,39 +1,31 @@
-/**
- * useRegistry.ts
- *
- * Custom hook for reading and writing the VarSyncRegistry via Office JS.
- * All component interactions with the registry go through this hook, which
- * keeps the Zustand store and custom XML in sync.
- */
-
 import { useCallback } from "react";
 import { useVarSyncStore } from "../store/useVarSyncStore";
 import { loadRegistry, saveRegistry, cleanOrphanedBindings } from "../lib/registry";
 import type { Variable, Binding, VarSyncRegistry } from "../../types";
-import { HIGHLIGHT_PALETTE, REGISTRY_VERSION } from "../../types";
-import { generateId } from "../lib/linker";
+import { HIGHLIGHT_PALETTE } from "../../types";
 
 export function useRegistry() {
   const { registry, setRegistry } = useVarSyncStore();
-
-  // ─── Load ──────────────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
     const loaded = await loadRegistry();
     setRegistry(loaded);
   }, [setRegistry]);
 
-  // ─── Persist helper ────────────────────────────────────────────────────────
-
+  // Optimistically updates the store; rolls back if the XML write fails.
   const persist = useCallback(
     async (next: VarSyncRegistry) => {
+      const previous = registry;
       setRegistry(next);
-      await saveRegistry(next);
+      try {
+        await saveRegistry(next);
+      } catch (err) {
+        setRegistry(previous);
+        throw err;
+      }
     },
-    [setRegistry]
+    [registry, setRegistry]
   );
-
-  // ─── Variable CRUD ─────────────────────────────────────────────────────────
 
   const addVariable = useCallback(
     async (name: string, value: string) => {
@@ -81,8 +73,6 @@ export function useRegistry() {
     [registry, persist]
   );
 
-  // ─── Binding CRUD ──────────────────────────────────────────────────────────
-
   const addBinding = useCallback(
     async (binding: Binding) => {
       const next: VarSyncRegistry = {
@@ -123,8 +113,6 @@ export function useRegistry() {
     },
     [registry, persist]
   );
-
-  // ─── Cleanup ───────────────────────────────────────────────────────────────
 
   const runCleanup = useCallback(async () => {
     const clean = cleanOrphanedBindings(registry);

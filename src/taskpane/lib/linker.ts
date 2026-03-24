@@ -1,14 +1,4 @@
-/**
- * linker.ts
- *
- * Run splitting and binding creation for both whole-shape and inline linking.
- */
-
 import type { Binding, Variable } from "../../types";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// UUID helper (crypto.randomUUID when available, fallback otherwise)
-// ─────────────────────────────────────────────────────────────────────────────
 
 export function generateId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -22,10 +12,6 @@ export function generateId(): string {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types used within linker
-// ─────────────────────────────────────────────────────────────────────────────
-
 export interface RunInfo {
   text: string;
   index: number;
@@ -38,14 +24,6 @@ export interface SplitResult {
   charOffset: number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Whole-shape linking
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Create a binding for a whole-shape link.
- * The shape's entire text content is replaced by the variable value.
- */
 export async function linkWholeShape(
   variable: Variable,
   shapeId: string,
@@ -69,12 +47,10 @@ export async function linkWholeShape(
         const shape = shapes.items.find((s) => s.id === shapeId);
         if (!shape) throw new Error(`Shape ${shapeId} not found on slide ${slideIndex}`);
 
-        // Capture original font color before writing
         const textRange = shape.textFrame.textRange;
         textRange.load("text");
         await context.sync();
 
-        // Write the variable value
         textRange.text = variable.value;
         await context.sync();
 
@@ -99,19 +75,7 @@ export async function linkWholeShape(
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Inline / substring linking
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Split a paragraph's runs at the boundaries of a text selection so the selected
- * substring becomes its own discrete run, then create a binding for it.
- *
- * `selectionStart` and `selectionEnd` are character offsets within the paragraph.
- *
- * NOTE: This function uses the PowerPoint Office JS API to manipulate runs.
- * Validate behavior with Script Lab before Phase 3 deployment (see NOTES.md).
- */
+// NOTE: Validate run-level API behavior with Script Lab before Phase 3 deployment (see NOTES.md).
 export async function linkInlineSelection(
   variable: Variable,
   shapeId: string,
@@ -146,37 +110,34 @@ export async function linkInlineSelection(
         runs.load("items");
         await context.sync();
 
-        // Build a flat character map: for each char position, which run contains it
-        let charPos = 0;
+        // Build a flat character map. Batch-load all run texts in a single sync.
+        for (const run of runs.items) {
+          run.textRange.load("text");
+        }
+        await context.sync();
+
         interface RunSpan {
           runIdx: number;
           start: number;
           end: number;
           text: string;
         }
+        let charPos = 0;
         const spans: RunSpan[] = [];
         for (let i = 0; i < runs.items.length; i++) {
-          const run = runs.items[i];
-          run.textRange.load("text");
-          await context.sync();
-          const text = run.textRange.text;
+          const text = runs.items[i].textRange.text;
           spans.push({ runIdx: i, start: charPos, end: charPos + text.length, text });
           charPos += text.length;
         }
 
-        // Identify which runs overlap with [selectionStart, selectionEnd)
         const overlapping = spans.filter(
           (s) => s.end > selectionStart && s.start < selectionEnd
         );
         if (overlapping.length === 0) throw new Error("Selection does not overlap any run");
 
-        // Collect all runs, rebuild text with the selection isolated into a single run.
-        // Strategy: delete existing runs and re-insert with the selected span isolated.
-        // PowerPoint does not provide a direct "split run" API, so we:
-        //   1. Collect the full paragraph text and font properties of each run
-        //   2. Rewrite the paragraph with three segments: before, selected, after
-        //   3. Apply original formatting to each segment
-
+        // PowerPoint has no direct "split run" API. Strategy:
+        //   1. Rewrite paragraph text (before + selected + after) — preserves content
+        //   2. Use getSubstring to target the selected range and write the variable value
         const paraTextRange = paragraph.textRange;
         paraTextRange.load("text");
         await context.sync();
@@ -188,33 +149,26 @@ export async function linkInlineSelection(
 
         if (!selected) throw new Error("Empty selection");
 
-        // Clear paragraph text and write three runs
         paraTextRange.text = before + selected + after;
         await context.sync();
 
-        // The paragraph now has its text reset; runs are recreated by PowerPoint.
-        // We track the run that contains `selected` by character offset.
-        // Because we wrote before+selected+after as plain text, PowerPoint may
-        // merge them into a single run. We use getSubstring to target the range.
-
-        // Use paragraph.textRange.getSubstring to create a targeted range for the
-        // selected text and apply value
         const selectedRange = paraTextRange.getSubstring(selectionStart, selectionEnd - selectionStart);
         selectedRange.text = variable.value;
         await context.sync();
 
-        // Capture the run index after the rewrite
-        // Since runs may have been re-created, reload
+        // Reload runs after rewrite and batch-load their texts in one sync.
         const freshRuns = paragraph.textRange.runs;
         freshRuns.load("items");
         await context.sync();
 
-        // Find the run whose text equals variable.value at charOffset
+        for (const run of freshRuns.items) {
+          run.textRange.load("text");
+        }
+        await context.sync();
+
         let targetRunIndex = 0;
         let cumChar = 0;
         for (let i = 0; i < freshRuns.items.length; i++) {
-          freshRuns.items[i].textRange.load("text");
-          await context.sync();
           const t = freshRuns.items[i].textRange.text;
           if (cumChar === selectionStart && t === variable.value) {
             targetRunIndex = i;
@@ -245,14 +199,6 @@ export async function linkInlineSelection(
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Utility — validate that a shape supports text linking
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Returns false if the shape type should not be linked (charts, images, etc.).
- * Accepts a PowerPoint shape type string as returned by shape.type.
- */
 export function isLinkableShapeType(shapeType: string): boolean {
   const unsupported = ["Chart", "Picture", "SmartArt", "Table", "Media", "3DModel"];
   return !unsupported.includes(shapeType);

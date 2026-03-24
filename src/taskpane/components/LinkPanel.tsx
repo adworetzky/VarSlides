@@ -57,8 +57,6 @@ export function LinkPanel() {
         const selectedText = selectedRange.text;
         if (!selectedText) throw new Error("No text selected");
 
-        const shapes = context.presentation.slides.items;
-        // Find the paragraph index and char offset
         const slides = context.presentation.slides;
         slides.load("items");
         await context.sync();

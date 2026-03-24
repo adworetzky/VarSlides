@@ -1,13 +1,8 @@
-import React, { useState, useRef } from "react";
+import React, { useMemo, useState, useRef } from "react";
 import { useRegistry } from "../hooks/useRegistry";
 import { syncVariable } from "../lib/syncer";
 import { useVarSyncStore } from "../store/useVarSyncStore";
 import type { Variable } from "../../types";
-
-interface EditState {
-  name: string;
-  value: string;
-}
 
 export function VariablesPanel() {
   const { registry, addVariable, updateVariable, deleteVariable, updateAllBindings } =
@@ -24,8 +19,13 @@ export function VariablesPanel() {
   const [deletingName, setDeletingName] = useState<string | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
 
-  const bindingCountFor = (name: string) =>
-    registry.bindings.filter((b) => b.variableName === name).length;
+  const bindingCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const b of registry.bindings) {
+      counts.set(b.variableName, (counts.get(b.variableName) ?? 0) + 1);
+    }
+    return counts;
+  }, [registry.bindings]);
 
   const handleStartEdit = (v: Variable) => {
     setEditingName(v.name);
@@ -166,7 +166,7 @@ export function VariablesPanel() {
       )}
 
       {registry.variables.map((v) => {
-        const count = bindingCountFor(v.name);
+        const count = bindingCounts.get(v.name) ?? 0;
         const isEditing = editingName === v.name;
         const isDeleting = deletingName === v.name;
 
