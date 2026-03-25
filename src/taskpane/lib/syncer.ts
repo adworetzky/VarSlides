@@ -105,6 +105,7 @@ export async function syncVariable(
           ...binding,
           slideNumber: binding.slideIndex + 1,
           shapeName,
+          currentText: paragraphText,
         });
         continue;
       }
@@ -112,7 +113,12 @@ export async function syncVariable(
       if (state === "recoverable") {
         const offset = findLastKnownValueOffset(binding.lastKnownValue, paragraphText);
         if (offset === -1) {
-          brokenList.push({ ...binding, slideNumber: binding.slideIndex + 1, shapeName });
+          brokenList.push({
+            ...binding,
+            slideNumber: binding.slideIndex + 1,
+            shapeName,
+            currentText: paragraphText,
+          });
           continue;
         }
         const targetRange = para.textRange.getSubstring(offset, binding.lastKnownValue.length);

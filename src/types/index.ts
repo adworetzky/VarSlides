@@ -26,6 +26,9 @@ export interface Binding {
 export interface BrokenBinding extends Binding {
   slideNumber: number; // 1-based for display
   shapeName: string;
+  /** Current paragraph text on the slide, captured at sync time.
+   *  Only present for bindings broken during a sync run (not from ambient display). */
+  currentText?: string;
 }
 
 export interface VarSyncRegistry {

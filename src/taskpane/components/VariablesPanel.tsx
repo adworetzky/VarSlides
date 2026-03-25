@@ -1,9 +1,10 @@
 import React, { useMemo, useState, useRef } from "react";
 import { useRegistry } from "../hooks/useRegistry";
 import { syncVariable } from "../lib/syncer";
+import { navigateToBinding } from "../lib/navigator";
 import { useVarSyncStore } from "../store/useVarSyncStore";
 import { FindLinkPanel } from "./FindLinkPanel";
-import type { Variable, VarSyncRegistry } from "../../types";
+import type { Variable, Binding, VarSyncRegistry } from "../../types";
 
 type VariableHealth = "ok" | "stale" | "broken" | "unknown";
 
@@ -31,17 +32,28 @@ export function VariablesPanel() {
   const [syncing, setSyncing] = useState<string | null>(null);
   const [deletingName, setDeletingName] = useState<string | null>(null);
   const [findLinkVar, setFindLinkVar] = useState<Variable | null>(null);
+  const [expandedOccurrences, setExpandedOccurrences] = useState<Set<string>>(new Set());
+  const [navigatingBinding, setNavigatingBinding] = useState<string | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
+  const bindingsByVar = useMemo(() => {
+    const map = new Map<string, Binding[]>();
+    for (const b of registry.bindings) {
+      if (!map.has(b.variableName)) map.set(b.variableName, []);
+      map.get(b.variableName)!.push(b);
+    }
+    return map;
+  }, [registry.bindings]);
+
   const bindingCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const b of registry.bindings) {
-      counts.set(b.variableName, (counts.get(b.variableName) ?? 0) + 1);
+    for (const [name, bs] of bindingsByVar) {
+      counts.set(name, bs.length);
     }
     return counts;
-  }, [registry.bindings]);
+  }, [bindingsByVar]);
 
   const variableHealth = useMemo(() => {
     const health = new Map<string, VariableHealth>();
@@ -148,6 +160,24 @@ export function VariablesPanel() {
       setError((e as Error).message);
     } finally {
       setSyncing(null);
+    }
+  };
+
+  const toggleOccurrences = (varName: string) => {
+    setExpandedOccurrences((prev) => {
+      const next = new Set(prev);
+      if (next.has(varName)) next.delete(varName);
+      else next.add(varName);
+      return next;
+    });
+  };
+
+  const handleNavigateBinding = async (b: Binding) => {
+    setNavigatingBinding(b.id);
+    try {
+      await navigateToBinding(b);
+    } finally {
+      setNavigatingBinding(null);
     }
   };
 
@@ -303,11 +333,13 @@ export function VariablesPanel() {
       {/* Variable List */}
       {filteredVariables.map((v) => {
         const count = bindingCounts.get(v.name) ?? 0;
+        const varBindings = bindingsByVar.get(v.name) ?? [];
         const isEditing = editingName === v.name;
         const isRenaming = renamingName === v.name;
         const isDeleting = deletingName === v.name;
         const health = variableHealth.get(v.name) ?? "unknown";
         const showFindLink = findLinkVar?.name === v.name;
+        const showOccurrences = expandedOccurrences.has(v.name);
 
         return (
           <div
@@ -370,7 +402,7 @@ export function VariablesPanel() {
               </div>
             )}
 
-            {/* Value row — inline edit + Find & Link toggle */}
+            {/* Value row — inline edit + occurrence toggle + Find & Link toggle */}
             <div className="flex items-center gap-1.5">
               {isEditing ? (
                 <input
@@ -393,6 +425,20 @@ export function VariablesPanel() {
                   {v.value || <span className="text-neutral-500 italic">empty</span>}
                 </button>
               )}
+              {/* Occurrence count toggle — reveals inline binding list */}
+              {count > 0 && (
+                <button
+                  onClick={() => toggleOccurrences(v.name)}
+                  className={`text-xs flex-shrink-0 transition-colors ${
+                    showOccurrences
+                      ? "text-cyan-300 font-medium"
+                      : "text-neutral-500 hover:text-neutral-300"
+                  }`}
+                  title={showOccurrences ? "Hide binding list" : "Show where this variable is linked"}
+                >
+                  {count} {count === 1 ? "link" : "links"} {showOccurrences ? "▴" : "▾"}
+                </button>
+              )}
               <button
                 onClick={() => setFindLinkVar(showFindLink ? null : v)}
                 className={`text-xs flex-shrink-0 transition-colors ${
@@ -405,6 +451,43 @@ export function VariablesPanel() {
                 Find
               </button>
             </div>
+
+            {/* Inline occurrence list — collapsible, shows each binding with nav */}
+            {showOccurrences && varBindings.length > 0 && (
+              <div className="flex flex-col gap-0.5 ml-0.5">
+                {varBindings.map((b) => {
+                  const isSynced = b.lastKnownValue === v.value;
+                  const displayName = b.shapeName ?? `${b.shapeId.slice(0, 8)}…`;
+                  return (
+                    <div
+                      key={b.id}
+                      className="flex items-center gap-1.5 bg-neutral-900/60 border border-neutral-700/40 rounded px-1.5 py-1 text-xs"
+                    >
+                      <button
+                        onClick={() => void handleNavigateBinding(b)}
+                        disabled={navigatingBinding === b.id}
+                        className="text-cyan-500 hover:text-cyan-300 disabled:text-neutral-600 font-medium flex-shrink-0 transition-colors"
+                        title="Go to this binding on the slide"
+                      >
+                        {navigatingBinding === b.id ? "…" : `Slide ${b.slideIndex + 1}`}
+                      </button>
+                      <span className="text-neutral-600">·</span>
+                      <span className="text-neutral-400 truncate flex-1" title={displayName}>
+                        {displayName}
+                      </span>
+                      <span
+                        className={`flex-shrink-0 text-[10px] leading-none ${
+                          isSynced ? "text-green-400" : "text-sky-400"
+                        }`}
+                        title={isSynced ? "Up to date" : "Needs sync"}
+                      >
+                        {isSynced ? "✓" : "⟳"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Find & Link inline panel */}
             {showFindLink && (

@@ -151,6 +151,12 @@ The panel auto-dismisses after 3 s when there are no broken bindings. When broke
 ### shapeName on Binding
 `Binding.shapeName` is optional (`string | undefined`). It is stored at link time for display purposes only — it is **not** used for any lookup or sync logic. Always prefer `shapeName` over raw `shapeId` in the UI, falling back to `shapeId.slice(0, 12)` for old bindings without it.
 
+### BrokenBinding.currentText
+`BrokenBinding.currentText?: string` is the paragraph text captured from the slide at sync time, giving users a "Expected X, Found Y" diff view without a second Office JS round-trip. It is only populated by `syncVariable()` for bindings classified as broken at runtime — it is **not** present on structurally broken bindings surfaced from the store (those have an empty `lastKnownValue` and no text to diff against).
+
+### Inline occurrence list in VariablesPanel
+Each variable row has a `N links ▾` toggle that expands a compact list of its current bindings (slide number, shape name, ✓/⟳ per-binding health). Clicking a slide number calls `navigateToBinding()`. This list reads directly from `registry.bindings` — it is derived state, not fetched from Office JS. The "Find" button still opens `FindLinkPanel` for searching new unlinked occurrences; the two are complementary.
+
 ## Color palette
 
 8 fixed colors in `HIGHLIGHT_PALETTE` (`src/types/index.ts`). Variable colors are assigned by position index and cycle if more than 8 variables exist. The `HighlightToggle` legend shows a cycling warning when active.
@@ -158,7 +164,7 @@ The panel auto-dismisses after 3 s when there are no broken bindings. When broke
 ## Things that will break
 
 - **Removing `REGISTRY_NAMESPACE`** — all existing custom XML parts in user files will become unreadable. Add a migration path if the namespace must change.
-- **Changing `Binding` fields** — `lastKnownValue` and `charOffset` are load-bearing for recovery. Renaming them requires migrating stored JSON.
+- **Changing `Binding` fields** — `lastKnownValue` and `charOffset` are load-bearing for recovery. Renaming them requires migrating stored JSON. `BrokenBinding.currentText` is ephemeral (not persisted) — it is safe to rename or remove.
 - **Adding `registry` or `highlightMode` to the `useHighlight` save-guard `useEffect` deps** — this re-registers the handler on every state change, which is expensive and can cause double-strip on save.
 - **Calling `saveRegistry` directly from a component** — bypasses Zustand, creating a store/XML split-brain. Always go through `useRegistry`.
 - **Storing health state in Zustand** — health is cheap to derive from bindings on every render. A cached store field would go stale and require manual invalidation.

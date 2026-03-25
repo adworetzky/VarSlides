@@ -10,10 +10,11 @@ A PowerPoint Office JS task pane add-in that lets you define named variables and
 - **Find & Link** — scan the entire deck for text matching a variable's current value and bulk-link all occurrences in one click
 - **Sync** — one click updates every linked instance across all slides; broken or drifted links are surfaced for manual review
 - **Highlight mode** — color-coded overlays show every linked span; stripped automatically before save
-- **Broken link recovery** — Re-learn lets you point a broken binding at the correct text without deleting it
+- **Broken link recovery** — Re-learn lets you point a broken binding at the correct text without deleting it; a diff view ("Expected X / Found Y") shows exactly what changed on the slide
 - **Variable rename** — rename a variable and cascade the change to all its bindings instantly
 - **Export / Import** — back up or restore the full registry as JSON
-- **Navigate to binding** — click any binding's slide number to jump directly to that slide and select the shape
+- **Navigate to binding** — click any binding's slide number to jump directly to that slide and select the shape (available in both Bindings tab and inline in Variables tab)
+- **Inline occurrence list** — expand any variable row in the Variables tab to see all its bindings with slide number, shape name, and per-binding sync state, without switching tabs
 
 ## Tech stack
 
@@ -87,9 +88,10 @@ varsync/
 2. **Link tab** — click a shape in PowerPoint, pick a variable, and click Link Shape or Link Selection.
    - The panel auto-updates when you select shapes (no manual refresh needed).
    - For substrings: double-click into the shape in PowerPoint, select the text, then return here and click Link Selection.
-3. **Variables tab → Find** — alternatively, click the Find button on any variable to scan all slides for matching text and link all occurrences at once.
-4. **Sync All** (header button) — after editing variable values, sync pushes changes to every linked shape. The result panel shows clean / recovered / broken counts and auto-dismisses in 3 s if everything is clean.
-5. **Bindings tab** — browse all bindings grouped by variable; click the slide number to navigate; click Unlink to remove.
+3. **Variables tab → N links ▾** — click the link count on any variable row to expand an inline occurrence list showing each binding's slide, shape, and sync state. Click any slide number to navigate directly to it.
+4. **Variables tab → Find** — alternatively, click the Find button to scan all slides for text matching a variable's current value and bulk-link all occurrences at once.
+5. **Sync All** (header button) — after editing variable values, sync pushes changes to every linked shape. The button glows when any bindings are stale or broken. The result panel shows clean / recovered / broken counts, auto-dismisses in 3 s if everything is clean, and shows an "Expected / Found" diff for each broken binding.
+6. **Bindings tab** — browse all bindings grouped by variable; click the slide number to navigate; click Unlink to remove.
 6. **Highlights tab** — toggle color overlays to visually review all linked spans.
 
 ## Binding states

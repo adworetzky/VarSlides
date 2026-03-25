@@ -92,9 +92,23 @@ export function BrokenLinkRow({ binding }: BrokenLinkRowProps) {
             <span className="text-neutral-500">·</span>
             <span className="text-neutral-400 truncate">{binding.shapeName}</span>
           </div>
-          <p className="text-xs text-neutral-500 mt-0.5">
-            Last known: <span className="font-mono text-amber-300">{binding.lastKnownValue || <em>empty</em>}</span>
-          </p>
+            {/* Diff view — only when we have both expected and current text */}
+          {binding.lastKnownValue && binding.currentText ? (
+            <div className="mt-0.5 space-y-0.5">
+              <p className="text-xs">
+                <span className="text-neutral-500">Expected: </span>
+                <span className="font-mono text-amber-300">{binding.lastKnownValue}</span>
+              </p>
+              <p className="text-xs">
+                <span className="text-neutral-500">Found:    </span>
+                <span className="font-mono text-neutral-300">{binding.currentText}</span>
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-neutral-500 mt-0.5">
+              Last known: <span className="font-mono text-amber-300">{binding.lastKnownValue || <em>empty</em>}</span>
+            </p>
+          )}
         </div>
         <span className="text-xs text-amber-400 flex-shrink-0 font-medium">Broken</span>
       </div>
