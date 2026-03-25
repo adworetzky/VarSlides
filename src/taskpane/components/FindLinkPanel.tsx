@@ -16,6 +16,7 @@ export function FindLinkPanel({ variable, onClose }: Props) {
   const [matches, setMatches] = useState<TextMatch[] | null>(null);
   const [linking, setLinking] = useState<Set<string>>(new Set());
   const [linked, setLinked] = useState<Set<string>>(new Set());
+  const [linkProgress, setLinkProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const linkedShapeIds = new Set(
@@ -73,9 +74,13 @@ export function FindLinkPanel({ variable, onClose }: Props) {
 
   const handleLinkAll = async () => {
     if (!matches) return;
-    for (const match of matches.filter((m) => !m.alreadyLinked && !linked.has(matchKey(m)))) {
-      await handleLinkMatch(match);
+    const toLink = matches.filter((m) => !m.alreadyLinked && !linked.has(matchKey(m)));
+    setLinkProgress({ current: 0, total: toLink.length });
+    for (let i = 0; i < toLink.length; i++) {
+      setLinkProgress({ current: i + 1, total: toLink.length });
+      await handleLinkMatch(toLink[i]);
     }
+    setLinkProgress(null);
   };
 
   const newMatches = matches?.filter((m) => !m.alreadyLinked) ?? [];
@@ -149,7 +154,9 @@ export function FindLinkPanel({ variable, onClose }: Props) {
                     disabled={linking.size > 0}
                     className="text-cyan-400 hover:text-cyan-300 disabled:text-neutral-600 font-medium transition-colors"
                   >
-                    {linking.size > 0 ? "Linking…" : "Link All"}
+                    {linkProgress
+                      ? `Linking ${linkProgress.current}/${linkProgress.total}…`
+                      : linking.size > 0 ? "Linking…" : "Link All"}
                   </button>
                 )}
                 <button

@@ -8,8 +8,21 @@ export function BindingsPanel() {
   const { registry, removeBinding } = useRegistry();
   const [unlinking, setUnlinking] = useState<string | null>(null);
   const [navigating, setNavigating] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
 
   const { bindings, variables } = registry;
+
+  const filteredBindings = filter
+    ? bindings.filter((b) => {
+        const q = filter.toLowerCase();
+        const slideName = `slide ${b.slideIndex + 1}`;
+        return (
+          b.variableName.toLowerCase().includes(q) ||
+          (b.shapeName ?? b.shapeId).toLowerCase().includes(q) ||
+          slideName.includes(q)
+        );
+      })
+    : bindings;
 
   if (bindings.length === 0) {
     return (
@@ -25,7 +38,7 @@ export function BindingsPanel() {
   }
 
   const grouped = new Map<string, Binding[]>();
-  for (const b of bindings) {
+  for (const b of filteredBindings) {
     if (!grouped.has(b.variableName)) grouped.set(b.variableName, []);
     grouped.get(b.variableName)!.push(b);
   }
@@ -50,7 +63,7 @@ export function BindingsPanel() {
 
   // Surface bindings with empty lastKnownValue (structurally broken) at the top.
   // Runtime classification (Clean/Recoverable/Broken) only runs during sync.
-  const brokenBindings: BrokenBinding[] = bindings
+  const brokenBindings: BrokenBinding[] = filteredBindings
     .filter((b) => !b.lastKnownValue)
     .map((b) => ({
       ...b,
@@ -60,12 +73,29 @@ export function BindingsPanel() {
 
   return (
     <div className="flex flex-col gap-2">
-      <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">
-        Bindings
-        <span className="ml-1.5 text-neutral-500 font-normal normal-case">
-          ({bindings.length})
-        </span>
-      </h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">
+          Bindings
+          <span className="ml-1.5 text-neutral-500 font-normal normal-case">
+            ({filter ? `${filteredBindings.length}/` : ""}{bindings.length})
+          </span>
+        </h2>
+      </div>
+
+      {bindings.length >= 3 && (
+        <input
+          className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-cyan-500"
+          placeholder="Filter by variable, shape, or slide…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+      )}
+
+      {filter && filteredBindings.length === 0 && (
+        <p className="text-xs text-neutral-500 text-center py-2">
+          No bindings match &ldquo;{filter}&rdquo;
+        </p>
+      )}
 
       {brokenBindings.length > 0 && (
         <div className="flex flex-col gap-1.5">

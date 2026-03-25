@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useVarSyncStore } from "../store/useVarSyncStore";
 import { loadRegistry, saveRegistry, cleanOrphanedBindings } from "../lib/registry";
-import type { Variable, Binding, VarSyncRegistry } from "../../types";
+import type { Variable, Binding, VarSyncRegistry, VariableSet } from "../../types";
 import { HIGHLIGHT_PALETTE } from "../../types";
 
 export function useRegistry() {
@@ -147,6 +147,55 @@ export function useRegistry() {
     }
   }, [registry, persist]);
 
+  /** Snapshot all current variable values into a named set. Overwrites if name already exists. */
+  const saveVariableSet = useCallback(
+    async (setName: string) => {
+      const values: Record<string, string> = {};
+      for (const v of registry.variables) {
+        values[v.name] = v.value;
+      }
+      const newSet: VariableSet = { name: setName, values, createdAt: new Date().toISOString() };
+      const existing = registry.variableSets ?? [];
+      const next: VarSyncRegistry = {
+        ...registry,
+        variableSets: existing.some((s) => s.name === setName)
+          ? existing.map((s) => (s.name === setName ? newSet : s))
+          : [...existing, newSet],
+      };
+      await persist(next);
+    },
+    [registry, persist]
+  );
+
+  /** Apply a saved set — updates matching variable values; variables not in the set are untouched. */
+  const applyVariableSet = useCallback(
+    async (setName: string) => {
+      const set = (registry.variableSets ?? []).find((s) => s.name === setName);
+      if (!set) throw new Error(`Variable set "${setName}" not found`);
+      const next: VarSyncRegistry = {
+        ...registry,
+        variables: registry.variables.map((v) =>
+          Object.prototype.hasOwnProperty.call(set.values, v.name)
+            ? { ...v, value: set.values[v.name] }
+            : v
+        ),
+      };
+      await persist(next);
+    },
+    [registry, persist]
+  );
+
+  const deleteVariableSet = useCallback(
+    async (setName: string) => {
+      const next: VarSyncRegistry = {
+        ...registry,
+        variableSets: (registry.variableSets ?? []).filter((s) => s.name !== setName),
+      };
+      await persist(next);
+    },
+    [registry, persist]
+  );
+
   return {
     registry,
     load,
@@ -160,5 +209,8 @@ export function useRegistry() {
     updateBinding,
     updateAllBindings,
     runCleanup,
+    saveVariableSet,
+    applyVariableSet,
+    deleteVariableSet,
   };
 }

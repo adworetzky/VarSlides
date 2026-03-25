@@ -121,7 +121,10 @@ export function BrokenLinkRow({ binding }: BrokenLinkRowProps) {
       )}
 
       {error && (
-        <p className="text-xs text-red-400">{error}</p>
+        <div className="text-xs text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-1 flex items-start gap-1.5">
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-300 hover:text-red-100 flex-shrink-0">×</button>
+        </div>
       )}
 
       <div className="flex gap-1.5">

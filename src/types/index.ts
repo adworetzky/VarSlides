@@ -31,10 +31,19 @@ export interface BrokenBinding extends Binding {
   currentText?: string;
 }
 
+/** A named snapshot of all variable values — lets users switch between data sets (e.g. "Client A" / "Client B") */
+export interface VariableSet {
+  name: string;
+  values: Record<string, string>; // variableName → value
+  createdAt: string;
+}
+
 export interface VarSyncRegistry {
   version: string;
   variables: Variable[];
   bindings: Binding[];
+  /** Named value snapshots — optional for backward compatibility with older registries */
+  variableSets?: VariableSet[];
 }
 
 export interface SelectionContext {

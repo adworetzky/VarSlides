@@ -13,14 +13,16 @@ type Tab = "variables" | "link" | "bindings" | "highlight";
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>("variables");
   const [initialized, setInitialized] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const { load, registry, updateAllBindings } = useRegistry();
   const { setSyncSummary } = useVarSyncStore();
 
   // Load registry from custom XML on mount
   useEffect(() => {
     load()
-      .catch(console.error)
+      .catch((e: unknown) => setLoadError((e as Error).message))
       .finally(() => setInitialized(true));
   }, []);
 
@@ -35,14 +37,16 @@ export function App() {
   }, [registry]);
 
   const handleSyncAll = async () => {
+    if (syncingAll) return; // guard against concurrent syncs
     setSyncingAll(true);
     setSyncSummary(null);
+    setSyncError(null);
     try {
       const { updatedRegistry, summary } = await syncAll(registry);
       await updateAllBindings(updatedRegistry.bindings);
       setSyncSummary(summary);
     } catch (e) {
-      console.error(e);
+      setSyncError((e as Error).message);
     } finally {
       setSyncingAll(false);
     }
@@ -88,6 +92,22 @@ export function App() {
           {syncingAll ? "Syncing…" : needsSync ? "Sync All ●" : "Sync All"}
         </button>
       </div>
+
+      {/* Load error banner */}
+      {loadError && (
+        <div className="mx-3 mt-2 text-xs text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-1 flex items-start gap-1.5">
+          <span className="flex-1">Registry failed to load: {loadError}. Working with empty state.</span>
+          <button onClick={() => setLoadError(null)} className="text-red-300 hover:text-red-100 flex-shrink-0">×</button>
+        </div>
+      )}
+
+      {/* Sync error banner */}
+      {syncError && (
+        <div className="mx-3 mt-2 text-xs text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-1 flex items-start gap-1.5">
+          <span className="flex-1">Sync failed: {syncError}</span>
+          <button onClick={() => setSyncError(null)} className="text-red-300 hover:text-red-100 flex-shrink-0">×</button>
+        </div>
+      )}
 
       {/* Sync Summary */}
       <div className="px-3 pt-2">

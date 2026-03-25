@@ -157,6 +157,12 @@ The panel auto-dismisses after 3 s when there are no broken bindings. When broke
 ### Inline occurrence list in VariablesPanel
 Each variable row has a `N links ▾` toggle that expands a compact list of its current bindings (slide number, shape name, ✓/⟳ per-binding health). Clicking a slide number calls `navigateToBinding()`. This list reads directly from `registry.bindings` — it is derived state, not fetched from Office JS. The "Find" button still opens `FindLinkPanel` for searching new unlinked occurrences; the two are complementary.
 
+### Variable Sets
+`VariableSet` in `src/types/index.ts` captures a named snapshot of all variable values (`Record<string, string>`). Sets are stored in `VarSyncRegistry.variableSets?: VariableSet[]` — optional so old registries without the field remain valid. `useRegistry` exposes `saveVariableSet`, `applyVariableSet`, `deleteVariableSet`. The UI lives in a collapsible "Variable Sets" section at the bottom of VariablesPanel. Applying a set only updates variables whose names appear in the set's values map — variables not in the set are left untouched.
+
+### Placeholder auto-discovery
+`scanForPlaceholders()` in `finder.ts` scans all slides for `{{variableName}}` tokens using the same 4-pass batching pattern as `findTextInDeck`. Returns `PlaceholderMatch[]` with `variableName` (extracted from braces), `rawToken`, location metadata, and `fullParagraphText`. The `PlaceholderScanPanel` component groups results by variable name, shows occurrence counts, and lets users "Create & Link" each group in one click. The `{{…}}` button in the VariablesPanel header opens this panel inline.
+
 ## Color palette
 
 8 fixed colors in `HIGHLIGHT_PALETTE` (`src/types/index.ts`). Variable colors are assigned by position index and cycle if more than 8 variables exist. The `HighlightToggle` legend shows a cycling warning when active.

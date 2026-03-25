@@ -4,6 +4,7 @@ import { syncVariable } from "../lib/syncer";
 import { navigateToBinding } from "../lib/navigator";
 import { useVarSyncStore } from "../store/useVarSyncStore";
 import { FindLinkPanel } from "./FindLinkPanel";
+import { PlaceholderScanPanel } from "./PlaceholderScanPanel";
 import type { Variable, Binding, VarSyncRegistry } from "../../types";
 
 type VariableHealth = "ok" | "stale" | "broken" | "unknown";
@@ -17,6 +18,9 @@ export function VariablesPanel() {
     renameVariable,
     replaceRegistry,
     updateAllBindings,
+    saveVariableSet,
+    applyVariableSet,
+    deleteVariableSet,
   } = useRegistry();
   const { setSyncSummary } = useVarSyncStore();
 
@@ -34,6 +38,11 @@ export function VariablesPanel() {
   const [findLinkVar, setFindLinkVar] = useState<Variable | null>(null);
   const [expandedOccurrences, setExpandedOccurrences] = useState<Set<string>>(new Set());
   const [navigatingBinding, setNavigatingBinding] = useState<string | null>(null);
+  const [showPlaceholderScan, setShowPlaceholderScan] = useState(false);
+  const [showSets, setShowSets] = useState(false);
+  const [newSetName, setNewSetName] = useState("");
+  const [savingSet, setSavingSet] = useState(false);
+  const [applyingSet, setApplyingSet] = useState<string | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -88,6 +97,9 @@ export function VariablesPanel() {
   };
 
   const handleCommitEdit = async (name: string) => {
+    if (!editValue.trim()) {
+      setError(`Warning: "${name}" value is empty — linked shapes will be cleared on the next sync`);
+    }
     try {
       await updateVariable(name, editValue);
     } catch (e) {
@@ -106,6 +118,12 @@ export function VariablesPanel() {
   const handleCommitRename = async (oldName: string) => {
     const trimmed = renameValue.trim();
     if (trimmed && trimmed !== oldName) {
+      const nameError = validateVarName(trimmed);
+      if (nameError) {
+        setError(nameError);
+        setRenamingName(null);
+        return;
+      }
       try {
         await renameVariable(oldName, trimmed);
         if (findLinkVar?.name === oldName) setFindLinkVar(null);
@@ -116,11 +134,22 @@ export function VariablesPanel() {
     setRenamingName(null);
   };
 
+  const validateVarName = (name: string): string | null => {
+    if (!name) return "Variable name is required";
+    if (name.length > 50) return "Name must be 50 characters or fewer";
+    return null;
+  };
+
   const handleAddVariable = async () => {
     const trimmedName = newVarName.trim();
     const trimmedValue = newVarValue.trim();
-    if (!trimmedName) {
-      setError("Variable name is required");
+    const nameError = validateVarName(trimmedName);
+    if (nameError) {
+      setError(nameError);
+      return;
+    }
+    if (!trimmedValue) {
+      setError("Variable value is required — linked shapes will be cleared on sync if empty");
       return;
     }
     try {
@@ -181,6 +210,39 @@ export function VariablesPanel() {
     }
   };
 
+  const handleSaveSet = async () => {
+    const name = newSetName.trim();
+    if (!name) return;
+    setSavingSet(true);
+    try {
+      await saveVariableSet(name);
+      setNewSetName("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSavingSet(false);
+    }
+  };
+
+  const handleApplySet = async (setName: string) => {
+    setApplyingSet(setName);
+    try {
+      await applyVariableSet(setName);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setApplyingSet(null);
+    }
+  };
+
+  const handleDeleteSet = async (setName: string) => {
+    try {
+      await deleteVariableSet(setName);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const handleExport = () => {
     const json = JSON.stringify(registry, null, 2);
     const blob = new Blob([json], { type: "application/json" });
@@ -227,6 +289,17 @@ export function VariablesPanel() {
         </h2>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setShowPlaceholderScan((s) => !s)}
+            className={`text-xs transition-colors ${
+              showPlaceholderScan
+                ? "text-cyan-300 font-medium"
+                : "text-neutral-500 hover:text-neutral-300"
+            }`}
+            title='Find and link {{variableName}} placeholders across all slides'
+          >
+            {"{{…}}"}
+          </button>
+          <button
             onClick={handleExport}
             disabled={registry.variables.length === 0}
             className="text-xs text-neutral-500 hover:text-neutral-300 disabled:text-neutral-700 transition-colors"
@@ -261,12 +334,15 @@ export function VariablesPanel() {
 
       {/* Error */}
       {error && (
-        <div className="text-xs text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-1">
-          {error}
-          <button onClick={() => setError(null)} className="ml-2 text-red-300 hover:text-red-100">
-            ×
-          </button>
+        <div className="text-xs text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-1 flex items-start gap-1.5">
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-300 hover:text-red-100 flex-shrink-0">×</button>
         </div>
+      )}
+
+      {/* Placeholder Scan Panel */}
+      {showPlaceholderScan && (
+        <PlaceholderScanPanel onClose={() => setShowPlaceholderScan(false)} />
       )}
 
       {/* Add Form */}
@@ -452,10 +528,10 @@ export function VariablesPanel() {
               </button>
             </div>
 
-            {/* Inline occurrence list — collapsible, shows each binding with nav */}
+            {/* Inline occurrence list — collapsible, shows each binding sorted by slide */}
             {showOccurrences && varBindings.length > 0 && (
               <div className="flex flex-col gap-0.5 ml-0.5">
-                {varBindings.map((b) => {
+                {[...varBindings].sort((a, b) => a.slideIndex - b.slideIndex).map((b) => {
                   const isSynced = b.lastKnownValue === v.value;
                   const displayName = b.shapeName ?? `${b.shapeId.slice(0, 8)}…`;
                   return (
@@ -519,6 +595,84 @@ export function VariablesPanel() {
           </div>
         );
       })}
+
+      {/* Variable Sets — save/switch named value snapshots */}
+      {registry.variables.length > 0 && (
+        <div className="mt-1 border-t border-neutral-800 pt-2">
+          <button
+            onClick={() => setShowSets((s) => !s)}
+            className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-300 transition-colors w-full"
+          >
+            <span className="font-medium">Variable Sets</span>
+            {(registry.variableSets?.length ?? 0) > 0 && (
+              <span className="text-neutral-600">({registry.variableSets!.length})</span>
+            )}
+            <span className="ml-auto">{showSets ? "▴" : "▾"}</span>
+          </button>
+
+          {showSets && (
+            <div className="mt-2 flex flex-col gap-2">
+              <p className="text-xs text-neutral-500">
+                Save a snapshot of all current values. Apply a set to restore them later — great for switching between clients or scenarios.
+              </p>
+
+              {/* Save new set */}
+              <div className="flex gap-1.5">
+                <input
+                  className="flex-1 bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-cyan-500"
+                  placeholder="Set name (e.g. Client A)"
+                  value={newSetName}
+                  onChange={(e) => setNewSetName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void handleSaveSet()}
+                />
+                <button
+                  onClick={() => void handleSaveSet()}
+                  disabled={!newSetName.trim() || savingSet}
+                  className="text-xs bg-neutral-700 hover:bg-neutral-600 disabled:bg-neutral-800 disabled:text-neutral-600 text-neutral-200 rounded px-2 py-1 transition-colors flex-shrink-0"
+                >
+                  {savingSet ? "…" : "Save"}
+                </button>
+              </div>
+
+              {/* Saved sets list */}
+              {(registry.variableSets?.length ?? 0) === 0 ? (
+                <p className="text-xs text-neutral-600 text-center py-1">No sets saved yet.</p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {registry.variableSets!.map((set) => (
+                    <div
+                      key={set.name}
+                      className="flex items-center gap-1.5 bg-neutral-800/50 border border-neutral-700/60 rounded px-2 py-1.5 text-xs"
+                    >
+                      <span className="flex-1 text-neutral-300 truncate font-medium" title={set.name}>
+                        {set.name}
+                      </span>
+                      <span className="text-neutral-600">
+                        {Object.keys(set.values).length} vars
+                      </span>
+                      <button
+                        onClick={() => void handleApplySet(set.name)}
+                        disabled={applyingSet !== null}
+                        className="text-xs text-cyan-400 hover:text-cyan-300 disabled:text-neutral-600 transition-colors flex-shrink-0"
+                        title={`Apply "${set.name}" — restores these variable values`}
+                      >
+                        {applyingSet === set.name ? "…" : "Apply"}
+                      </button>
+                      <button
+                        onClick={() => void handleDeleteSet(set.name)}
+                        className="text-xs text-neutral-600 hover:text-red-400 transition-colors flex-shrink-0"
+                        title="Delete set"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

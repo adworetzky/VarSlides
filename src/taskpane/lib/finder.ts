@@ -1,5 +1,92 @@
 import { isLinkableShapeType } from "./linker";
 
+/** Regex for `{{variableName}}` placeholders — captures the name inside the braces */
+const PLACEHOLDER_RE = /\{\{([^}]+)\}\}/g;
+
+export interface PlaceholderMatch {
+  /** Variable name extracted from `{{name}}` */
+  variableName: string;
+  /** The full token as it appears in the slide, e.g. `{{AUM}}` */
+  rawToken: string;
+  shapeId: string;
+  shapeName: string;
+  slideIndex: number;
+  paragraphIndex: number;
+  charOffset: number;
+  fullParagraphText: string;
+}
+
+/**
+ * Scan every linkable shape in the deck for `{{variableName}}` placeholders.
+ * Uses the same 4-pass batching strategy as findTextInDeck — no N+1 syncs.
+ */
+export async function scanForPlaceholders(): Promise<PlaceholderMatch[]> {
+  const matches: PlaceholderMatch[] = [];
+
+  await PowerPoint.run(async (context) => {
+    const slides = context.presentation.slides;
+    slides.load("items");
+    await context.sync();
+
+    for (const slide of slides.items) {
+      slide.shapes.load("items");
+    }
+    await context.sync();
+
+    const targets: { shape: PowerPoint.Shape; slideIndex: number }[] = [];
+    for (let si = 0; si < slides.items.length; si++) {
+      for (const shape of slides.items[si].shapes.items) {
+        shape.load("id, name, type");
+        targets.push({ shape, slideIndex: si });
+      }
+    }
+    await context.sync();
+
+    const linkable = targets.filter((t) => {
+      try { return isLinkableShapeType(t.shape.type as string); } catch { return false; }
+    });
+
+    for (const { shape } of linkable) {
+      try { shape.textFrame.textRange.paragraphs.load("items"); } catch { /* no text frame */ }
+    }
+    await context.sync();
+
+    for (const { shape } of linkable) {
+      try {
+        for (const para of shape.textFrame.textRange.paragraphs.items) {
+          para.textRange.load("text");
+        }
+      } catch { /* skip */ }
+    }
+    await context.sync();
+
+    for (const { shape, slideIndex } of linkable) {
+      try {
+        const paras = shape.textFrame.textRange.paragraphs.items;
+        for (let pi = 0; pi < paras.length; pi++) {
+          const text = paras[pi].textRange.text;
+          PLACEHOLDER_RE.lastIndex = 0;
+          let m: RegExpExecArray | null;
+          while ((m = PLACEHOLDER_RE.exec(text)) !== null) {
+            matches.push({
+              variableName: m[1].trim(),
+              rawToken: m[0],
+              shapeId: shape.id,
+              shapeName: shape.name,
+              slideIndex,
+              paragraphIndex: pi,
+              charOffset: m.index,
+              fullParagraphText: text,
+            });
+          }
+        }
+      } catch { /* skip */ }
+    }
+  });
+
+  return matches;
+}
+
 export interface TextMatch {
   shapeId: string;
   shapeName: string;
